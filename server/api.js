@@ -3,7 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { scanAllSkills, parseSkillFile } = require('./scanner');
+const { scanAllSkills, parseSkillFile, getInventory, invalidateInventory, resolveSkill } = require('./scanner');
 const { syncSkill, syncDirectory } = require('./sync');
 const { getOverrides, setOverride, deleteOverride } = require('./overrides');
 const {
@@ -39,10 +39,12 @@ router.get('/system-info', (req, res) => {
 
 /**
  * List all discovered skills with dual-env status & target stats
+ * ?force=1 bypasses the inventory cache (used by the manual refresh button)
  */
 router.get('/skills', (req, res) => {
   try {
-    const { skills, targets } = scanAllSkills();
+    const force = req.query.force === '1';
+    const { skills, targets } = getInventory({ force });
     const stats = {
       total: skills.length,
       windows: skills.filter(s => s.hasWin).length,
@@ -69,11 +71,8 @@ router.get('/skill-detail', (req, res) => {
   const skillId = req.query.id;
 
   if (skillId && !skillPath) {
-    const { skills } = scanAllSkills();
-    const found = skills.find(s => s.id === skillId.toLowerCase());
-    if (found && found.managedBy && found.managedBy.length > 0) {
-      skillPath = found.managedBy[0].path;
-    }
+    const { instance } = resolveSkill(getInventory(), skillId);
+    skillPath = instance ? instance.path : undefined;
   }
 
   if (!skillPath || !fs.existsSync(skillPath)) {
@@ -119,11 +118,8 @@ router.post('/save-skill', (req, res) => {
   let { skillPath, skillId, content } = req.body;
 
   if (!skillPath && skillId) {
-    const { skills } = scanAllSkills();
-    const found = skills.find(s => s.id === skillId.toLowerCase());
-    if (found && found.managedBy && found.managedBy.length > 0) {
-      skillPath = found.managedBy[0].path;
-    }
+    const { instance } = resolveSkill(getInventory(), skillId);
+    skillPath = instance ? instance.path : undefined;
   }
 
   if (!skillPath || typeof content !== 'string') {
@@ -134,6 +130,7 @@ router.post('/save-skill', (req, res) => {
     const targetFile = path.join(skillPath, 'SKILL.md');
     fs.writeFileSync(targetFile, content, 'utf8');
     const lint = lintSkill(skillPath);
+    invalidateInventory();
     res.json({ success: true, lint });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -151,6 +148,7 @@ router.post('/sync', (req, res) => {
 
   try {
     const result = syncSkill(skill, direction);
+    invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -164,11 +162,8 @@ router.post('/fork', (req, res) => {
   let { sourcePath, skillId, newName, targetEnv } = req.body;
 
   if (!sourcePath && skillId) {
-    const { skills } = scanAllSkills();
-    const found = skills.find(s => s.id === skillId.toLowerCase());
-    if (found && found.managedBy && found.managedBy.length > 0) {
-      sourcePath = found.managedBy[0].path;
-    }
+    const { instance } = resolveSkill(getInventory(), skillId);
+    sourcePath = instance ? instance.path : undefined;
   }
 
   if (!sourcePath) {
@@ -177,6 +172,7 @@ router.post('/fork', (req, res) => {
 
   try {
     const result = forkToCustom(sourcePath, newName, targetEnv);
+    invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -194,6 +190,7 @@ router.post('/scaffold', (req, res) => {
 
   try {
     const result = scaffoldSkill({ name, description, targetEnv });
+    invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -243,16 +240,8 @@ router.post('/open-editor', (req, res) => {
   let { path: dirPath, skillId, targetId, editor } = req.body;
 
   if (!dirPath && skillId) {
-    const { skills } = scanAllSkills();
-    const found = skills.find(s => s.id === skillId.toLowerCase());
-    if (found && found.managedBy && found.managedBy.length > 0) {
-      if (targetId) {
-        const specific = found.managedBy.find(m => m.targetId === targetId);
-        dirPath = specific ? specific.path : found.managedBy[0].path;
-      } else {
-        dirPath = found.managedBy[0].path;
-      }
-    }
+    const { instance } = resolveSkill(getInventory(), skillId, targetId);
+    dirPath = instance ? instance.path : undefined;
   }
 
   if (!dirPath) {
@@ -285,6 +274,7 @@ router.post('/set-override', (req, res) => {
 
   try {
     const result = setOverride(skillId, { tier, upstreamUrl, tags, notes });
+    invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -302,6 +292,7 @@ router.post('/reset-override', (req, res) => {
 
   try {
     const success = deleteOverride(skillId);
+    if (success) invalidateInventory();
     res.json({ success, message: success ? 'Override removed' : 'No override existed' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

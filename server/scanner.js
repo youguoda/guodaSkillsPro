@@ -333,8 +333,47 @@ function scanAllSkills() {
   };
 }
 
+// ---------------------------------------------------------------------
+// Inventory cache & deep accessors
+// scanAllSkills() is the raw (always-fresh) scan; getInventory() serves the
+// cached inventory and is the only thing id-based lookups should touch.
+// Mutating routes MUST call invalidateInventory() after changing skill files.
+// ---------------------------------------------------------------------
+let inventoryCache = null;
+
+function getInventory({ force = false } = {}) {
+  if (force || !inventoryCache) {
+    inventoryCache = scanAllSkills();
+  }
+  return inventoryCache;
+}
+
+function invalidateInventory() {
+  inventoryCache = null;
+}
+
+/**
+ * Resolve a skill aggregate (and one of its agent instances) by id.
+ * targetId scopes to a specific agent directory; null picks the first instance.
+ * Returns { skill: null, instance: null } when the id is unknown.
+ */
+function resolveSkill(inventory, skillId, targetId = null) {
+  const id = String(skillId || '').toLowerCase();
+  const skill = (inventory.skills || []).find(s => s.id === id);
+  if (!skill || !Array.isArray(skill.managedBy) || skill.managedBy.length === 0) {
+    return { skill: skill || null, instance: null };
+  }
+  const instance = targetId
+    ? (skill.managedBy.find(m => m.targetId === targetId) || skill.managedBy[0])
+    : skill.managedBy[0];
+  return { skill, instance };
+}
+
 module.exports = {
   scanAllSkills,
   parseSkillFile,
-  calculateDirHash
+  calculateDirHash,
+  getInventory,
+  invalidateInventory,
+  resolveSkill
 };

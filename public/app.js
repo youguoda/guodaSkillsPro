@@ -61,7 +61,7 @@ async function refreshSkills() {
   if (btn) btn.classList.add('opacity-50', 'pointer-events-none');
 
   try {
-    const res = await fetch('/api/skills');
+    const res = await fetch('/api/skills?force=1');
     const data = await res.json();
     if (data.success) {
       allSkills = data.skills;

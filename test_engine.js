@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const config = require('./server/config');
-const { scanAllSkills, parseSkillFile, calculateDirHash } = require('./server/scanner');
+const { scanAllSkills, parseSkillFile, calculateDirHash, getInventory, invalidateInventory, resolveSkill } = require('./server/scanner');
 const { syncDirectory, syncSkill } = require('./server/sync');
 const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDiff, openInEditor } = require('./server/lifecycle');
 const { app, server } = require('./server/server');
@@ -180,6 +180,11 @@ async function runTests() {
       const setApiRes = await checkEndpoint('/api/set-override', 'POST', { skillId: '__api_probe_skill__', tier: 'builtin', notes: 'probe' });
       assert(setApiRes.statusCode === 200 && setApiRes.json.success === true, 'POST /api/set-override returned 200 OK');
 
+      const invBefore = await getInventory();
+      await checkEndpoint('/api/set-override', 'POST', { skillId: '__api_probe_skill__', tier: 'builtin', notes: 'probe2' });
+      const invAfter = await getInventory();
+      assert(invAfter !== invBefore, 'set-override route invalidates the inventory cache');
+
       const getApiRes = await checkEndpoint('/api/overrides');
       assert(getApiRes.statusCode === 200 && getApiRes.json.overrides['__api_probe_skill__'].tier === 'builtin', 'GET /api/overrides lists persisted override');
 
@@ -195,9 +200,35 @@ async function runTests() {
       console.log('  [CLEANUP] Removed temporary overrides from user_overrides.json');
     }
 
+    // 10. Inventory Cache & Deep Skill Resolver
+    console.log('\n[TEST 10] Inventory Cache & Skill Resolver...');
+    invalidateInventory();
+    const inv1 = await getInventory();
+    const inv2 = await getInventory();
+    assert(inv1 === inv2, 'Second getInventory() is a cache hit (same object)');
+
+    const resolverProbe = inv1.skills[0];
+    const { skill, instance } = resolveSkill(inv1, resolverProbe.id);
+    assert(skill && skill.id === resolverProbe.id, `resolveSkill located: ${skill.id}`);
+    assert(instance && instance.path && instance.targetId, 'Default instance resolved with path + targetId');
+
+    const wantedTargetId = resolverProbe.managedBy[resolverProbe.managedBy.length - 1].targetId;
+    const { instance: scoped } = resolveSkill(inv1, resolverProbe.id, wantedTargetId);
+    assert(scoped.targetId === wantedTargetId, `targetId-scoped instance resolved: ${scoped.targetId}`);
+
+    assert(resolveSkill(inv1, '__no_such_skill__').skill === null, 'Unknown id resolves to null skill');
+    assert(resolveSkill(inv1, '').skill === null, 'Empty id resolves to null skill');
+
+    invalidateInventory();
+    const inv3 = await getInventory();
+    assert(inv3 !== inv1, 'invalidateInventory() forces a fresh scan on next call');
+
+    const inv4 = await getInventory({ force: true });
+    assert(inv4 !== inv3, 'force:true bypasses the cache');
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('         ALL 9 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 10 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

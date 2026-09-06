@@ -19,3 +19,6 @@ Thumbs.db
 
 # Runtime user data (manual overrides live here)
 server/data/
+
+# probe leftovers
+.tmp_*
