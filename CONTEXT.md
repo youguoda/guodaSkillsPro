@@ -2,6 +2,10 @@
 
 领域词汇表与架构决策记录。后续架构评审、`/grill-with-docs` 与新会话应从这里开始。
 
+## 工作约定 (Standing Conventions)
+
+- **每次修改都必须 `git commit`，随后 `git push origin main`**（用户明确要求，适用于所有后续改动；推送用 `gh auth setup-git` 配置的凭据）。
+
 ## 领域词汇 (Domain Glossary)
 
 | 术语 | 含义 |
