@@ -36,7 +36,7 @@ async function runTests() {
 
     // 2. Scanner Test (with Hermes & OpenClaw)
     console.log('\n[TEST 2] Scanner & Multi-Agent Discovery...');
-    const scanResult = scanAllSkills();
+    const scanResult = await scanAllSkills();
     assert(scanResult && Array.isArray(scanResult.skills), 'Scanner returns skills array');
     assert(Array.isArray(scanResult.targets), 'Scanner returns targets list');
     assert(scanResult.skills.length >= 100, `Discovered ${scanResult.skills.length} skills (>= 100 expected with Hermes & OpenClaw)`);
@@ -80,9 +80,9 @@ async function runTests() {
 
     // 5. Fork Built-in Test
     console.log('\n[TEST 5] Fork to Custom Test...');
-    const forked = forkToCustom(scaffolded.path, `forked-${tempName}`, 'windows');
+    const forked = await forkToCustom(scaffolded.path, `forked-${tempName}`, 'windows');
     assert(fs.existsSync(forked.path), `Forked skill created at ${forked.path}`);
-    const forkedParsed = parseSkillFile(forked.path);
+    const forkedParsed = await parseSkillFile(forked.path);
     assert(forkedParsed.name === `forked-${tempName}`, `Forked frontmatter updated name to: ${forkedParsed.name}`);
 
     // Clean up temporary local test directories
@@ -97,7 +97,7 @@ async function runTests() {
     fs.writeFileSync(path.join(mockWinDir, 'SKILL.md'), `---\nname: mock-sync\ndescription: A test mock skill\n---\n# Mock Sync\n`, 'utf8');
 
     const mockWslDir = path.join(config.defaultCustomDir.wsl, `__mock_sync_test__`);
-    const syncRes = syncDirectory(mockWinDir, mockWslDir);
+    const syncRes = await syncDirectory(mockWinDir, mockWslDir);
     assert(syncRes.success === true, 'Sync to WSL returned success');
     assert(fs.existsSync(mockWslDir), 'Destination folder created in WSL ext4');
     assert(syncRes.srcHash === syncRes.dstHash, `Source hash matches destination hash (${syncRes.srcHash})`);
@@ -169,7 +169,7 @@ async function runTests() {
       assert(overrideRes.upstream.source === 'mattpocock/skills', `Upstream source normalized to: ${overrideRes.upstream.source}`);
       assert(Array.isArray(overrideRes.tags) && overrideRes.tags.length === 3, `Tags normalized to 3 entries: [${overrideRes.tags.join(' / ')}]`);
 
-      const rescan = scanAllSkills();
+      const rescan = await scanAllSkills();
       const overriddenSkill = rescan.skills.find(s => s.id === overrideTarget.id);
       assert(overriddenSkill && overriddenSkill.isOverridden === true, 'Scanner flags skill as isOverridden');
       assert(overriddenSkill.tier === 'downloaded', `Scanner applied manual tier: ${overriddenSkill.tier}`);
@@ -194,7 +194,7 @@ async function runTests() {
       // Always restore automatic detection, even when assertions fail midway
       deleteOverride(overrideTarget.id);
       deleteOverride('__api_probe_skill__');
-      const restoredScan = scanAllSkills();
+      const restoredScan = await scanAllSkills();
       const restored = restoredScan.skills.find(s => s.id === overrideTarget.id);
       assert(restored && restored.isOverridden === false, 'Cleanup restored automatic detection (isOverridden=false)');
       console.log('  [CLEANUP] Removed temporary overrides from user_overrides.json');

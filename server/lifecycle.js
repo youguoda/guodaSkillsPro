@@ -1,14 +1,15 @@
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
-const { exec, execSync } = require('child_process');
+const { exec } = require('child_process');
 const config = require('./config');
-const { parseSkillFile, calculateDirHash } = require('./scanner');
+const { calculateDirHash, pathExists } = require('./scanner');
 
 /**
  * 1. BUILT-IN: Fork a built-in or system skill into user's custom directory
  */
-function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
-  if (!fs.existsSync(sourceSkillPath)) {
+async function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
+  if (!(await pathExists(sourceSkillPath))) {
     throw new Error(`Source skill path does not exist: ${sourceSkillPath}`);
   }
 
@@ -23,7 +24,7 @@ function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
   }
 
   // Copy whole folder
-  fs.cpSync(sourceSkillPath, destDir, { recursive: true });
+  await fsp.cp(sourceSkillPath, destDir, { recursive: true });
 
   // Update frontmatter name in SKILL.md
   const skillMdPath = path.join(destDir, 'SKILL.md');
@@ -38,23 +39,29 @@ function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
     name: cleanName,
     path: destDir,
     env: targetEnv,
-    hash: calculateDirHash(destDir)
+    hash: await calculateDirHash(destDir)
   };
 }
 
 /**
  * 2. DOWNLOADED: Check upstream remote for updates
  */
-function checkUpstreamUpdate(upstream) {
+function gitLsRemote(sourceUrl, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    exec(`git ls-remote ${sourceUrl} HEAD`, { timeout: timeoutMs, windowsHide: true }, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(stdout);
+    });
+  });
+}
+
+async function checkUpstreamUpdate(upstream) {
   if (!upstream || !upstream.sourceUrl) {
     throw new Error('No upstream sourceUrl configured for this skill');
   }
 
   try {
-    const output = execSync(`git ls-remote ${upstream.sourceUrl} HEAD`, {
-      encoding: 'utf8',
-      timeout: 8000
-    });
+    const output = await gitLsRemote(upstream.sourceUrl);
     const match = output.match(/^([a-f0-9]+)\s+/);
     if (!match) {
       return { hasUpdate: false, error: 'Could not parse remote commit' };
