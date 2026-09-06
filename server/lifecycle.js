@@ -51,7 +51,6 @@ function checkUpstreamUpdate(upstream) {
   }
 
   try {
-    // Run git ls-remote to find remote HEAD
     const output = execSync(`git ls-remote ${upstream.sourceUrl} HEAD`, {
       encoding: 'utf8',
       timeout: 8000
@@ -202,21 +201,26 @@ function openInEditor(dirPath, editor = 'cursor') {
     throw new Error(`Directory not found: ${dirPath}`);
   }
 
-  let command = `explorer "${dirPath}"`;
-  if (editor === 'cursor') {
-    command = `cursor "${dirPath}"`;
-  } else if (editor === 'code') {
-    command = `code "${dirPath}"`;
+  // Normalize path for Windows CLI execution
+  const normalizedPath = path.resolve(dirPath);
+
+  // Candidate commands
+  let cmd = `cursor "${normalizedPath}"`;
+  if (editor === 'code') {
+    cmd = `code "${normalizedPath}"`;
+  } else if (editor === 'explorer') {
+    cmd = `explorer "${normalizedPath}"`;
   }
 
-  exec(command, (err) => {
+  // Execute asynchronously
+  exec(cmd, { windowsHide: true }, (err) => {
     if (err) {
-      // Fallback to explorer if editor command failed
-      exec(`explorer "${dirPath}"`);
+      console.warn(`Editor launch failed for [${cmd}], falling back to Explorer:`, err.message);
+      exec(`explorer "${normalizedPath}"`);
     }
   });
 
-  return { success: true, command };
+  return { success: true, command: cmd, path: normalizedPath };
 }
 
 module.exports = {

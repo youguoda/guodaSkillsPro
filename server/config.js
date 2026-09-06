@@ -14,56 +14,68 @@ module.exports = {
   WSL_USER,
   WSL_HOME_UNC,
   
-  // Pre-configured agent scan targets
+  // Pre-configured agent scan targets with friendly names and short display paths
   targets: [
     {
-      id: 'win-agents',
-      name: 'Windows Generic Agents (~/.agents/skills)',
-      env: 'windows',
-      agent: 'agents',
-      tier: 'downloaded',
-      dir: path.join(WIN_USER_HOME, '.agents/skills'),
-      lockfile: path.join(WIN_USER_HOME, '.agents/.skill-lock.json')
-    },
-    {
       id: 'win-claude',
-      name: 'Windows Claude Code (~/.claude/skills)',
+      name: 'Windows: Claude Code',
       env: 'windows',
-      agent: 'claude',
+      agentId: 'claude',
+      agentName: 'Claude Code',
       tier: 'mixed',
-      dir: path.join(WIN_USER_HOME, '.claude/skills')
+      dir: path.join(WIN_USER_HOME, '.claude/skills'),
+      displayBase: '~/.claude/skills'
     },
     {
       id: 'win-cursor',
-      name: 'Windows Cursor (~/.cursor/skills-cursor)',
+      name: 'Windows: Cursor',
       env: 'windows',
-      agent: 'cursor',
+      agentId: 'cursor',
+      agentName: 'Cursor',
       tier: 'mixed',
-      dir: path.join(WIN_USER_HOME, '.cursor/skills-cursor')
+      dir: path.join(WIN_USER_HOME, '.cursor/skills-cursor'),
+      displayBase: '~/.cursor/skills-cursor'
+    },
+    {
+      id: 'win-agents',
+      name: 'Windows: Generic Agents',
+      env: 'windows',
+      agentId: 'agents',
+      agentName: 'Generic Agents (.agents)',
+      tier: 'downloaded',
+      dir: path.join(WIN_USER_HOME, '.agents/skills'),
+      lockfile: path.join(WIN_USER_HOME, '.agents/.skill-lock.json'),
+      displayBase: '~/.agents/skills'
     },
     {
       id: 'wsl-cursor',
-      name: 'WSL Cursor (~/.cursor/skills-cursor)',
+      name: 'WSL: Cursor',
       env: 'wsl',
-      agent: 'cursor',
+      agentId: 'cursor',
+      agentName: 'Cursor',
       tier: 'mixed',
-      dir: path.join(WSL_HOME_UNC, '.cursor/skills-cursor')
+      dir: path.join(WSL_HOME_UNC, '.cursor/skills-cursor'),
+      displayBase: 'WSL:~/.cursor/skills-cursor'
     },
     {
       id: 'wsl-codex-system',
-      name: 'WSL Codex System (~/.codex/skills/.system)',
+      name: 'WSL: Codex System',
       env: 'wsl',
-      agent: 'codex',
+      agentId: 'codex',
+      agentName: 'Codex System',
       tier: 'builtin',
-      dir: path.join(WSL_HOME_UNC, '.codex/skills/.system')
+      dir: path.join(WSL_HOME_UNC, '.codex/skills/.system'),
+      displayBase: 'WSL:~/.codex/skills/.system'
     },
     {
       id: 'wsl-claude',
-      name: 'WSL Claude Code (~/.claude/skills)',
+      name: 'WSL: Claude Code',
       env: 'wsl',
-      agent: 'claude',
+      agentId: 'claude',
+      agentName: 'Claude Code',
       tier: 'mixed',
-      dir: path.join(WSL_HOME_UNC, '.claude/skills')
+      dir: path.join(WSL_HOME_UNC, '.claude/skills'),
+      displayBase: 'WSL:~/.claude/skills'
     }
   ],
 

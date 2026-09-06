@@ -1,10 +1,14 @@
 // SkillsHub Client Application Logic
 let allSkills = [];
 let appStats = {};
+let appTargets = [];
 let currentTierFilter = 'all';
 let currentSyncFilter = 'all';
+let currentAgentFilter = 'all';
+
 let currentActiveSkill = null;
-let currentActiveSkillPath = null;
+let currentActiveSkillId = null;
+let currentActiveInstance = null;
 
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
@@ -15,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Toast notification helper
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
+  if (!container) return;
   const toast = document.createElement('div');
   const colors = {
     success: 'bg-emerald-600 text-white border-emerald-500',
@@ -53,7 +58,7 @@ async function loadSystemInfo() {
 async function refreshSkills() {
   const container = document.getElementById('skills-container');
   const btn = document.getElementById('btn-refresh');
-  btn.classList.add('opacity-50', 'pointer-events-none');
+  if (btn) btn.classList.add('opacity-50', 'pointer-events-none');
 
   try {
     const res = await fetch('/api/skills');
@@ -61,7 +66,9 @@ async function refreshSkills() {
     if (data.success) {
       allSkills = data.skills;
       appStats = data.stats;
+      appTargets = data.targets || [];
       updateStatsUI();
+      renderTargetsOverview();
       renderSkillsList();
       showToast(`扫描完成，共识别 ${allSkills.length} 个 Agent 技能`, 'success');
     } else {
@@ -70,7 +77,7 @@ async function refreshSkills() {
   } catch (err) {
     showToast(`无法连接后端服务: ${err.message}`, 'error');
   } finally {
-    btn.classList.remove('opacity-50', 'pointer-events-none');
+    if (btn) btn.classList.remove('opacity-50', 'pointer-events-none');
   }
 }
 
@@ -82,6 +89,39 @@ function updateStatsUI() {
   document.getElementById('stat-synced').textContent = appStats.synced || 0;
   document.getElementById('stat-builtin').textContent = appStats.builtin || 0;
   document.getElementById('stat-downloaded').textContent = appStats.downloaded || 0;
+}
+
+// Render Agent Target Folders Overview Bar
+function renderTargetsOverview() {
+  const container = document.getElementById('agent-targets-bar');
+  if (!container) return;
+
+  if (!appTargets || appTargets.length === 0) {
+    container.innerHTML = '<div class="text-xs text-slate-500">未发现 Agent 专属目录</div>';
+    return;
+  }
+
+  container.innerHTML = appTargets.map(t => {
+    const isSelected = currentAgentFilter === t.agentId;
+    const envBadge = t.env === 'windows' 
+      ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300">Win</span>'
+      : '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300">WSL</span>';
+
+    return `
+      <div onclick="setAgentFilter('${t.agentId}')" class="cursor-pointer p-2.5 rounded-xl border transition flex flex-col justify-between ${isSelected ? 'bg-indigo-950/60 border-indigo-500/80 shadow-md' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'}">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-1.5">
+            ${envBadge}
+            <span class="font-semibold text-xs text-slate-200 truncate">${t.agentName}</span>
+          </div>
+          <span class="text-xs font-bold ${t.count > 0 ? 'text-indigo-400' : 'text-slate-600'}">${t.count}</span>
+        </div>
+        <div class="text-[10px] text-slate-500 font-mono truncate mt-1.5" title="${t.dir}">
+          ${t.displayBase}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // Filter setting functions
@@ -109,6 +149,14 @@ function setSyncFilter(sync) {
   renderSkillsList();
 }
 
+function setAgentFilter(agentId) {
+  currentAgentFilter = agentId;
+  const select = document.getElementById('agent-filter-select');
+  if (select) select.value = agentId;
+  renderTargetsOverview();
+  renderSkillsList();
+}
+
 // Render Skills Cards Grid
 function renderSkillsList() {
   const container = document.getElementById('skills-container');
@@ -120,11 +168,17 @@ function renderSkillsList() {
     if (currentTierFilter !== 'all' && skill.tier !== currentTierFilter) return false;
     // 2. Sync status filter
     if (currentSyncFilter !== 'all' && skill.syncStatus !== currentSyncFilter) return false;
-    // 3. Search query
+    // 3. Agent filter
+    if (currentAgentFilter !== 'all') {
+      if (!skill.agentIds || !skill.agentIds.includes(currentAgentFilter)) return false;
+    }
+    // 4. Search query
     if (search) {
       const matchName = skill.name.toLowerCase().includes(search);
       const matchDesc = (skill.description || '').toLowerCase().includes(search);
-      if (!matchName && !matchDesc) return false;
+      const matchAgent = (skill.agentLabels || []).some(l => l.toLowerCase().includes(search));
+      const matchPath = (skill.managedBy || []).some(m => m.displayPath.toLowerCase().includes(search));
+      if (!matchName && !matchDesc && !matchAgent && !matchPath) return false;
     }
     return true;
   });
@@ -133,7 +187,7 @@ function renderSkillsList() {
     container.innerHTML = `
       <div class="col-span-full py-16 text-center text-slate-500 bg-slate-900/30 border border-slate-800/60 rounded-2xl">
         <p class="text-sm">没有匹配到符合条件的技能</p>
-        <button onclick="setTierFilter('all'); setSyncFilter('all');" class="mt-2 text-xs text-indigo-400 hover:underline">重置所有筛选</button>
+        <button onclick="setTierFilter('all'); setSyncFilter('all'); setAgentFilter('all');" class="mt-2 text-xs text-indigo-400 hover:underline">重置所有筛选</button>
       </div>
     `;
     return;
@@ -155,8 +209,23 @@ function renderSkillsList() {
       wsl_only: '<span class="flex items-center space-x-1 text-[10px] text-orange-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span><span>仅 WSL</span></span>'
     };
 
-    // First available path for inspection
-    const primaryPath = (skill.instances.windows[0] || skill.instances.wsl[0] || {}).path || '';
+    // Build Agent location rows
+    const agentRows = (skill.managedBy || []).map(m => {
+      const isWin = m.env === 'windows';
+      const badgeClass = isWin ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+      return `
+        <div class="flex items-center justify-between text-[11px] bg-slate-950/70 px-2 py-1 rounded-lg border border-slate-800/80">
+          <div class="flex items-center space-x-1.5 truncate">
+            <span class="px-1.5 py-0.2 rounded text-[9px] font-bold border ${badgeClass}">${isWin ? 'Win' : 'WSL'}</span>
+            <span class="text-slate-300 font-medium">${m.agentName}</span>
+            <span class="text-slate-500 font-mono truncate" title="${m.path}">${m.displayPath}</span>
+          </div>
+          <button onclick="openInCursor('${skill.id}', '${m.targetId}')" class="text-[10px] text-indigo-400 hover:text-indigo-300 ml-2 flex-shrink-0 font-medium hover:underline flex items-center space-x-0.5" title="在 Cursor 中直接打开此 Agent 目录">
+            <span>打开</span>
+          </button>
+        </div>
+      `;
+    }).join('');
 
     // Action buttons based on status
     let actionButtons = '';
@@ -172,13 +241,16 @@ function renderSkillsList() {
 
     // Tier-specific buttons
     if (skill.tier === 'builtin') {
-      actionButtons += `<button onclick="forkBuiltinSkill('${primaryPath}', '${skill.name}')" class="px-2.5 py-1 text-[11px] bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition">🔱 Fork 派生</button>`;
+      actionButtons += `<button onclick="forkBuiltinSkill('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition">🔱 Fork 派生</button>`;
     } else if (skill.tier === 'downloaded' && skill.upstream) {
       actionButtons += `<button onclick="checkSkillUpdate('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">🔄 检查更新</button>`;
     }
 
-    // Always allow viewing/editing
-    actionButtons += `<button onclick="openEditorModal('${primaryPath}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">查看 / 编辑</button>`;
+    // Quick open in cursor button right on card
+    actionButtons += `<button onclick="openInCursor('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition font-medium">⚡ 用 Cursor 打开</button>`;
+
+    // View & Edit button
+    actionButtons += `<button onclick="openEditorModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">查看 / 编辑</button>`;
 
     return `
       <div class="skill-card bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
@@ -199,21 +271,24 @@ function renderSkillsList() {
           </p>
         </div>
 
-        <!-- Location & Env Info -->
-        <div class="pt-2 border-t border-slate-800/80 text-[11px] space-y-1 font-mono text-slate-400">
-          <div class="flex items-center justify-between">
-            <span class="text-slate-500">跨端状态:</span>
+        <!-- Agent Locations Section (明确展示归属哪个 Agent 目录) -->
+        <div class="space-y-1.5 pt-1">
+          <div class="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+            <span>Agent 归属与所在目录:</span>
             ${syncBadges[skill.syncStatus] || ''}
           </div>
+          <div class="space-y-1">
+            ${agentRows}
+          </div>
           ${skill.upstream ? `
-          <div class="flex items-center justify-between truncate text-slate-500" title="${skill.upstream.sourceUrl}">
-            <span>上游源:</span>
-            <span class="text-indigo-400 truncate max-w-[160px]">${skill.upstream.source}</span>
+          <div class="flex items-center justify-between truncate text-slate-500 text-[10px] font-mono pt-1" title="${skill.upstream.sourceUrl}">
+            <span>上游:</span>
+            <span class="text-indigo-400 truncate max-w-[170px]">${skill.upstream.source}</span>
           </div>` : ''}
         </div>
 
         <!-- Card Actions -->
-        <div class="pt-2 flex flex-wrap items-center gap-1.5 justify-end">
+        <div class="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5 justify-end">
           ${actionButtons}
         </div>
       </div>
@@ -222,8 +297,28 @@ function renderSkillsList() {
 }
 
 // ---------------------------------------------------------------------
-// Actions: Sync, Fork, Update
+// Actions: Open in Cursor, Sync, Fork, Update
 // ---------------------------------------------------------------------
+
+// Open in Cursor directly
+async function openInCursor(skillId, targetId = null) {
+  showToast(`正在唤起 Cursor 打开 ${skillId}...`, 'info');
+  try {
+    const res = await fetch('/api/open-editor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId, targetId, editor: 'cursor' })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`已通过 Cursor 打开目录: ${data.result.path}`, 'success');
+    } else {
+      showToast(`打开失败: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`唤起异常: ${err.message}`, 'error');
+  }
+}
 
 // Sync single skill
 async function syncSingleSkill(skillId, direction) {
@@ -250,16 +345,19 @@ async function syncSingleSkill(skillId, direction) {
 }
 
 // Fork Builtin Skill
-async function forkBuiltinSkill(sourcePath, currentName) {
-  const newName = prompt(`为 Fork 的自定义技能输入新名称:`, `my-${currentName}`);
+async function forkBuiltinSkill(skillId) {
+  const skill = allSkills.find(s => s.id === skillId);
+  if (!skill) return;
+
+  const newName = prompt(`为 Fork 的自定义技能输入新名称:`, `my-${skill.name}`);
   if (!newName) return;
 
-  showToast(`正在派生 ${currentName} 为自定义技能...`, 'info');
+  showToast(`正在派生 ${skill.name} 为自定义技能...`, 'info');
   try {
     const res = await fetch('/api/fork', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourcePath, newName, targetEnv: 'windows' })
+      body: JSON.stringify({ skillId, newName, targetEnv: 'windows' })
     });
     const data = await res.json();
     if (data.success) {
@@ -312,7 +410,6 @@ async function openDiffModal(skillId) {
   output.innerHTML = '<p class="text-slate-500 py-4 text-center">正在计算 Windows 与 WSL 的行级差异...</p>';
   document.getElementById('modal-diff').classList.remove('hidden');
 
-  // Bind direction buttons
   document.getElementById('btn-diff-sync-to-wsl').onclick = async () => {
     await syncSingleSkill(skillId, 'to_wsl');
     closeDiffModal();
@@ -368,22 +465,43 @@ function closeDiffModal() {
 }
 
 // ---------------------------------------------------------------------
-// Editor & Markdown Viewer Modal
+// Editor & Markdown Viewer Modal (Safe & Robust)
 // ---------------------------------------------------------------------
-async function openEditorModal(skillPath) {
-  currentActiveSkillPath = skillPath;
+async function openEditorModal(skillId, specificTargetId = null) {
+  currentActiveSkillId = skillId;
+  const skill = allSkills.find(s => s.id === skillId);
+  if (!skill) return;
+
   const modal = document.getElementById('modal-editor');
   modal.classList.remove('hidden');
 
+  document.getElementById('modal-skill-name').textContent = skill.name;
+  document.getElementById('modal-skill-meta').textContent = `类别: ${skill.tier === 'builtin' ? '官方内置' : skill.tier === 'downloaded' ? '社区下载' : '自定义技能'} | 涉及 ${skill.managedBy.length} 个 Agent 目录`;
+
+  // Render instance switcher chips
+  const instancesList = document.getElementById('modal-instances-list');
+  const activeInstance = (specificTargetId && skill.managedBy.find(m => m.targetId === specificTargetId)) || skill.managedBy[0];
+  currentActiveInstance = activeInstance;
+
+  instancesList.innerHTML = skill.managedBy.map(m => {
+    const isSelected = m.targetId === activeInstance.targetId;
+    return `
+      <button onclick="switchModalInstance('${skill.id}', '${m.targetId}')" class="px-2.5 py-1 rounded-lg border font-mono text-[11px] transition flex items-center space-x-1.5 ${isSelected ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900 text-slate-400 border-slate-750 hover:text-slate-200'}">
+        <span>${m.env === 'windows' ? '🪟 Win' : '🐧 WSL'}: ${m.agentName}</span>
+      </button>
+    `;
+  }).join('');
+
+  document.getElementById('modal-current-path').textContent = `物理路径: ${activeInstance.path}`;
+  document.getElementById('modal-current-hash').textContent = `Hash: ${activeInstance.dirHash}`;
+
+  // Fetch content for active instance
   try {
-    const res = await fetch(`/api/skill-detail?path=${encodeURIComponent(skillPath)}`);
+    const res = await fetch(`/api/skill-detail?path=${encodeURIComponent(activeInstance.path)}`);
     const data = await res.json();
     if (data.success) {
       currentActiveSkill = data;
-      document.getElementById('modal-skill-name').textContent = data.parsed.name;
-      document.getElementById('modal-skill-path').textContent = data.path;
       document.getElementById('editor-textarea').value = data.parsed.rawContent;
-
       updateLinterBanner(data.lint);
       renderFilesList(data.files);
       switchEditorTab('edit');
@@ -393,9 +511,13 @@ async function openEditorModal(skillPath) {
   }
 }
 
+function switchModalInstance(skillId, targetId) {
+  openEditorModal(skillId, targetId);
+}
+
 function updateLinterBanner(lint) {
   const banner = document.getElementById('linter-banner');
-  const msg = document.getElementById('linter-msg');
+  if (!banner) return;
 
   if (!lint.valid) {
     banner.className = 'rounded-xl p-3 text-xs flex items-start space-x-2 bg-rose-500/10 border border-rose-500/20 text-rose-400';
@@ -411,6 +533,7 @@ function updateLinterBanner(lint) {
 
 function renderFilesList(files) {
   const list = document.getElementById('files-list');
+  if (!list) return;
   if (!files || files.length === 0) {
     list.innerHTML = '<li class="text-slate-500 italic">暂无附属脚本或参考文件</li>';
     return;
@@ -430,6 +553,8 @@ function switchEditorTab(tab) {
   const viewEdit = document.getElementById('view-edit');
   const viewPrev = document.getElementById('view-preview');
   const viewFiles = document.getElementById('view-files');
+
+  if (!btnEdit || !viewEdit) return;
 
   [btnEdit, btnPrev, btnFiles].forEach(b => b.className = 'pb-2 text-slate-400 hover:text-slate-200');
   [viewEdit, viewPrev, viewFiles].forEach(v => v.classList.add('hidden'));
@@ -451,13 +576,15 @@ function switchEditorTab(tab) {
 async function saveSkillContent() {
   const content = document.getElementById('editor-textarea').value;
   const btn = document.getElementById('btn-save-skill');
+  if (!currentActiveInstance) return;
+
   btn.textContent = '保存中...';
 
   try {
     const res = await fetch('/api/save-skill', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skillPath: currentActiveSkillPath, content })
+      body: JSON.stringify({ skillPath: currentActiveInstance.path, content })
     });
     const data = await res.json();
     if (data.success) {
@@ -474,14 +601,10 @@ async function saveSkillContent() {
   }
 }
 
-function triggerOpenEditor() {
-  if (!currentActiveSkillPath) return;
-  fetch('/api/open-editor', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: currentActiveSkillPath, editor: 'cursor' })
-  });
-  showToast('已唤起本地 Cursor / 文件管理器打开该技能目录', 'info');
+function triggerOpenEditorFromModal() {
+  if (!currentActiveSkillId) return;
+  const targetId = currentActiveInstance ? currentActiveInstance.targetId : null;
+  openInCursor(currentActiveSkillId, targetId);
 }
 
 function closeEditorModal() {
@@ -522,7 +645,7 @@ async function createCustomSkill() {
       showToast(`技能 ${name} 标准骨架创建成功！`, 'success');
       closeNewSkillModal();
       await refreshSkills();
-      openEditorModal(data.result.path);
+      openEditorModal(data.result.name);
     } else {
       showToast(`创建失败: ${data.error}`, 'error');
     }

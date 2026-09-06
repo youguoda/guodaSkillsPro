@@ -28,8 +28,8 @@ function parseSkillFile(skillDir) {
       const nameMatch = frontmatterRaw.match(/^name:\s*(.+)$/m);
       const descMatch = frontmatterRaw.match(/^description:\s*(?:>-\s*)?([\s\S]*?)(?=\n[a-z_]+:|$)/m);
 
-      if (nameMatch) name = nameMatch[1].trim();
-      if (descMatch) description = descMatch[1].replace(/\r?\n\s*/g, ' ').trim();
+      if (nameMatch) name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+      if (descMatch) description = descMatch[1].replace(/\r?\n\s*/g, ' ').trim().replace(/^["']|["']$/g, '');
     }
 
     return {
@@ -55,7 +55,6 @@ function calculateDirHash(dir) {
   function hashEntries(currentDir) {
     if (!fs.existsSync(currentDir)) return;
     const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-    // Sort for deterministic hashing
     entries.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
@@ -79,7 +78,7 @@ function calculateDirHash(dir) {
 }
 
 /**
- * Scans directories and returns a unified, cross-environment skills inventory
+ * Scans directories and returns a unified, cross-environment skills inventory with Agent folder mappings
  */
 function scanAllSkills() {
   // 1. Load lockfile(s)
@@ -101,6 +100,10 @@ function scanAllSkills() {
 
   // 2. Discover all skill folders across all targets
   const rawList = [];
+  const targetCounts = {};
+  for (const target of config.targets) {
+    targetCounts[target.id] = 0;
+  }
 
   for (const target of config.targets) {
     if (!fs.existsSync(target.dir)) continue;
@@ -114,6 +117,7 @@ function scanAllSkills() {
         const parsed = parseSkillFile(skillDir);
         if (!parsed) continue;
 
+        targetCounts[target.id] = (targetCounts[target.id] || 0) + 1;
         const dirHash = calculateDirHash(skillDir);
 
         // Determine tier
@@ -142,22 +146,26 @@ function scanAllSkills() {
           }
         }
 
-        // Check helper files
+        // Subdirectories
         const subdirs = [];
         for (const sub of ['scripts', 'references', 'examples', 'resources']) {
           if (fs.existsSync(path.join(skillDir, sub))) subdirs.push(sub);
         }
 
+        const displayPath = `${target.displayBase}/${item.name}`;
+
         rawList.push({
           skillName: parsed.name,
           dirName: item.name,
           env: target.env,
-          agent: target.agent,
+          agentId: target.agentId,
+          agentName: target.agentName,
           targetId: target.id,
           targetName: target.name,
           tier,
           dirHash,
           path: skillDir,
+          displayPath,
           description: parsed.description,
           subdirs,
           hasValidFrontmatter: parsed.hasValidFrontmatter,
@@ -185,27 +193,34 @@ function scanAllSkills() {
         instances: {
           windows: [],
           wsl: []
-        }
+        },
+        managedBy: []
       });
     }
 
     const group = aggregatedMap.get(key);
-    // Prioritize richer metadata if another instance has it
     if (!group.description && item.description) group.description = item.description;
     if (item.tier === 'builtin') group.tier = 'builtin';
     else if (item.tier === 'downloaded' && group.tier !== 'builtin') group.tier = 'downloaded';
     if (!group.upstream && item.upstream) group.upstream = item.upstream;
 
-    group.instances[item.env].push({
-      agent: item.agent,
+    const instanceInfo = {
+      agentId: item.agentId,
+      agentName: item.agentName,
       targetId: item.targetId,
+      targetName: item.targetName,
+      env: item.env,
       path: item.path,
+      displayPath: item.displayPath,
       dirHash: item.dirHash,
       hasValidFrontmatter: item.hasValidFrontmatter
-    });
+    };
+
+    group.instances[item.env].push(instanceInfo);
+    group.managedBy.push(instanceInfo);
   }
 
-  // 4. Compute status flags for each skill
+  // 4. Compute status flags, agent tags, and paths
   const unifiedList = Array.from(aggregatedMap.values()).map(skill => {
     const hasWin = skill.instances.windows.length > 0;
     const hasWsl = skill.instances.wsl.length > 0;
@@ -222,19 +237,41 @@ function scanAllSkills() {
       syncStatus = (winHash === wslHash) ? 'synced' : 'diff';
     }
 
+    // Unique Agent IDs and labels
+    const uniqueAgentIds = Array.from(new Set(skill.managedBy.map(m => m.agentId)));
+    const uniqueAgentLabels = Array.from(new Set(skill.managedBy.map(m => `${m.agentName} (${m.env === 'windows' ? 'Win' : 'WSL'})`)));
+
     return {
       ...skill,
       syncStatus,
       winHash,
       wslHash,
       hasWin,
-      hasWsl
+      hasWsl,
+      agentIds: uniqueAgentIds,
+      agentLabels: uniqueAgentLabels
     };
   });
 
-  // Sort alphabetically by name
   unifiedList.sort((a, b) => a.name.localeCompare(b.name));
-  return unifiedList;
+
+  // Build target stats
+  const targetStats = config.targets.map(t => ({
+    id: t.id,
+    name: t.name,
+    agentId: t.agentId,
+    agentName: t.agentName,
+    env: t.env,
+    dir: t.dir,
+    displayBase: t.displayBase,
+    exists: fs.existsSync(t.dir),
+    count: targetCounts[t.id] || 0
+  }));
+
+  return {
+    skills: unifiedList,
+    targets: targetStats
+  };
 }
 
 module.exports = {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SkillsHub - AI Agent Skills 管理控制台</title>
+  <title>SkillsHub - AI Agent Skills 跨环境管理控制台</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -42,13 +42,13 @@
             <h1 class="font-bold text-lg text-white tracking-tight">SkillsHub</h1>
             <span class="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-mono">Win + WSL2</span>
           </div>
-          <p class="text-xs text-slate-400">AI Agent 技能跨环境控制中心</p>
+          <p class="text-xs text-slate-400">AI Agent 技能跨环境与多智能体归属管理</p>
         </div>
       </div>
 
       <!-- Environment Badges & Action Buttons -->
-      <div class="flex items-center space-x-4">
-        <div class="hidden md:flex items-center space-x-3 text-xs bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 font-mono">
+      <div class="flex items-center space-x-3">
+        <div class="hidden lg:flex items-center space-x-3 text-xs bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 font-mono">
           <div class="flex items-center space-x-1.5">
             <span class="w-2 h-2 rounded-full bg-blue-400"></span>
             <span class="text-slate-300" id="env-win-user">Windows</span>
@@ -91,7 +91,7 @@
           <span class="w-2 h-2 rounded-full bg-blue-500"></span>
         </div>
         <span class="text-2xl font-bold text-blue-400 mt-1" id="stat-win-only">-</span>
-        <span class="text-[11px] text-slate-500 mt-1">待同步至 WSL</span>
+        <span class="text-[11px] text-slate-500 mt-1">可同步至 WSL</span>
       </div>
       <!-- WSL Only -->
       <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-amber-500/40 transition" onclick="setSyncFilter('wsl_only')">
@@ -100,7 +100,7 @@
           <span class="w-2 h-2 rounded-full bg-amber-500"></span>
         </div>
         <span class="text-2xl font-bold text-amber-400 mt-1" id="stat-wsl-only">-</span>
-        <span class="text-[11px] text-slate-500 mt-1">待同步至 Win</span>
+        <span class="text-[11px] text-slate-500 mt-1">可同步至 Win</span>
       </div>
       <!-- Synced -->
       <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-emerald-500/40 transition" onclick="setSyncFilter('synced')">
@@ -131,16 +131,40 @@
       </div>
     </div>
 
+    <!-- Agent Folders Overview Bar (新功能：清楚展示哪个 Agent 目录管理哪些 Skills) -->
+    <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-2.5">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+          <span>📁</span>
+          <span>Agent 目录与技能归属速查 (点击快速过滤指定 Agent)</span>
+        </span>
+        <span class="text-[11px] text-slate-500">显示当前已扫描到的 6 个 Agent 专属技能目录</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5" id="agent-targets-bar">
+        <!-- Dynamically rendered target badges -->
+        <div class="text-xs text-slate-500 py-1">加载中...</div>
+      </div>
+    </div>
+
     <!-- Filters & Search Toolbar -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center shadow-lg">
+    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center shadow-lg">
       <!-- Search Box -->
       <div class="relative flex-1 max-w-md">
         <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-        <input type="text" id="search-input" oninput="renderSkillsList()" placeholder="搜索技能名称、描述关键词..." class="w-full pl-10 pr-4 py-2 bg-slate-950/80 border border-slate-700/80 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition">
+        <input type="text" id="search-input" oninput="renderSkillsList()" placeholder="搜索技能名称、描述、Agent 或路径..." class="w-full pl-10 pr-4 py-2 bg-slate-950/80 border border-slate-700/80 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition">
       </div>
 
       <!-- Filter Tabs -->
       <div class="flex flex-wrap items-center gap-2 text-xs">
+        <!-- Agent Filter Dropdown/Tabs -->
+        <select id="agent-filter-select" onchange="setAgentFilter(this.value)" class="bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="all">全部 Agent 技能</option>
+          <option value="claude">Claude Code (Win + WSL)</option>
+          <option value="cursor">Cursor (Win + WSL)</option>
+          <option value="codex">Codex System (WSL)</option>
+          <option value="agents">Generic Agents (.agents)</option>
+        </select>
+
         <!-- Tier Filter Buttons -->
         <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="tier-filters">
           <button onclick="setTierFilter('all')" data-tier="all" class="filter-tier-btn px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-medium transition">全部</button>
@@ -177,15 +201,15 @@
       <!-- Modal Header -->
       <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
         <div class="flex items-center space-x-3">
-          <span id="modal-skill-icon" class="text-xl">📄</span>
+          <span id="modal-skill-icon" class="text-2xl">📄</span>
           <div>
             <h2 id="modal-skill-name" class="font-bold text-base text-white font-mono">skill-name</h2>
-            <p id="modal-skill-path" class="text-xs text-slate-400 truncate max-w-md font-mono">/path/to/skill</p>
+            <p id="modal-skill-meta" class="text-xs text-slate-400">加载中...</p>
           </div>
         </div>
         <div class="flex items-center space-x-2">
-          <button onclick="triggerOpenEditor()" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition flex items-center space-x-1" title="在本地 Cursor 中打开">
-            <span>在 Cursor 打开</span>
+          <button onclick="triggerOpenEditorFromModal()" class="px-3 py-1.5 text-xs bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-lg transition flex items-center space-x-1.5" title="在 Cursor 中直接打开该技能目录">
+            <span>⚡ 用 Cursor 打开</span>
           </button>
           <button onclick="closeEditorModal()" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -195,6 +219,18 @@
 
       <!-- Modal Body -->
       <div class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- Agent Location Selector -->
+        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold text-slate-300">当前查看的 Agent 存放位置：</span>
+            <span id="modal-current-hash" class="font-mono text-[11px] text-slate-500">Hash: -</span>
+          </div>
+          <div id="modal-instances-list" class="flex flex-wrap gap-2 text-xs">
+            <!-- Instance chips rendered here -->
+          </div>
+          <div id="modal-current-path" class="text-[11px] font-mono text-slate-400 truncate pt-1"></div>
+        </div>
+
         <!-- Linter Validation Banner -->
         <div id="linter-banner" class="rounded-xl p-3 text-xs flex items-start space-x-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
           <span class="font-bold">✓ 规范校验通过</span>
@@ -205,12 +241,12 @@
         <div class="flex border-b border-slate-800 space-x-4 text-xs font-medium">
           <button id="tab-btn-edit" onclick="switchEditorTab('edit')" class="pb-2 text-indigo-400 border-b-2 border-indigo-500">编辑 SKILL.md</button>
           <button id="tab-btn-preview" onclick="switchEditorTab('preview')" class="pb-2 text-slate-400 hover:text-slate-200">渲染预览</button>
-          <button id="tab-btn-files" onclick="switchEditorTab('files')" class="pb-2 text-slate-400 hover:text-slate-200">附带资源文件</button>
+          <button id="tab-btn-files" onclick="switchEditorTab('files')" class="pb-2 text-slate-400 hover:text-slate-200">附带脚本与资源</button>
         </div>
 
         <!-- Edit View -->
         <div id="view-edit" class="space-y-2">
-          <textarea id="editor-textarea" rows="18" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 leading-relaxed"></textarea>
+          <textarea id="editor-textarea" rows="16" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 leading-relaxed"></textarea>
         </div>
 
         <!-- Preview View -->
@@ -220,7 +256,7 @@
 
         <!-- Files View -->
         <div id="view-files" class="hidden space-y-2 text-xs">
-          <p class="text-slate-400">技能附带脚本与参考文档清单：</p>
+          <p class="text-slate-400">该技能附带的脚本与参考文档清单：</p>
           <ul id="files-list" class="space-y-1 font-mono text-slate-300 bg-slate-950 p-4 rounded-xl border border-slate-800"></ul>
         </div>
       </div>
@@ -280,10 +316,10 @@
           <p class="text-[11px] text-slate-500 mt-1">智能体会根据此描述判断何时激活该技能</p>
         </div>
         <div>
-          <label class="block text-slate-300 font-medium mb-1">首发创建环境</label>
+          <label class="block text-slate-300 font-medium mb-1">目标 Agent 目录</label>
           <select id="new-skill-env" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none">
-            <option value="windows">Windows 本地 (~/.claude/skills)</option>
-            <option value="wsl">WSL2 Linux (~/.cursor/skills-cursor)</option>
+            <option value="windows">Windows: Claude Code (~/.claude/skills)</option>
+            <option value="wsl">WSL: Cursor (~/.cursor/skills-cursor)</option>
           </select>
         </div>
       </div>

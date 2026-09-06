@@ -26,44 +26,55 @@ router.get('/system-info', (req, res) => {
     targets: config.targets.map(t => ({
       id: t.id,
       name: t.name,
+      agentId: t.agentId,
+      agentName: t.agentName,
       env: t.env,
-      agent: t.agent,
-      tier: t.tier,
       dir: t.dir,
+      displayBase: t.displayBase,
       exists: fs.existsSync(t.dir)
     }))
   });
 });
 
 /**
- * List all discovered skills with dual-env status
+ * List all discovered skills with dual-env status & target stats
  */
 router.get('/skills', (req, res) => {
   try {
-    const list = scanAllSkills();
+    const { skills, targets } = scanAllSkills();
     const stats = {
-      total: list.length,
-      windows: list.filter(s => s.hasWin).length,
-      wsl: list.filter(s => s.hasWsl).length,
-      synced: list.filter(s => s.syncStatus === 'synced').length,
-      diff: list.filter(s => s.syncStatus === 'diff').length,
-      winOnly: list.filter(s => s.syncStatus === 'windows_only').length,
-      wslOnly: list.filter(s => s.syncStatus === 'wsl_only').length,
-      builtin: list.filter(s => s.tier === 'builtin').length,
-      downloaded: list.filter(s => s.tier === 'downloaded').length,
-      custom: list.filter(s => s.tier === 'custom').length
+      total: skills.length,
+      windows: skills.filter(s => s.hasWin).length,
+      wsl: skills.filter(s => s.hasWsl).length,
+      synced: skills.filter(s => s.syncStatus === 'synced').length,
+      diff: skills.filter(s => s.syncStatus === 'diff').length,
+      winOnly: skills.filter(s => s.syncStatus === 'windows_only').length,
+      wslOnly: skills.filter(s => s.syncStatus === 'wsl_only').length,
+      builtin: skills.filter(s => s.tier === 'builtin').length,
+      downloaded: skills.filter(s => s.tier === 'downloaded').length,
+      custom: skills.filter(s => s.tier === 'custom').length
     };
-    res.json({ success: true, stats, skills: list });
+    res.json({ success: true, stats, targets, skills });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 /**
- * Read full SKILL.md and directory structure
+ * Read full SKILL.md and directory structure by id or by path
  */
 router.get('/skill-detail', (req, res) => {
-  const { path: skillPath } = req.query;
+  let skillPath = req.query.path;
+  const skillId = req.query.id;
+
+  if (skillId && !skillPath) {
+    const { skills } = scanAllSkills();
+    const found = skills.find(s => s.id === skillId.toLowerCase());
+    if (found && found.managedBy && found.managedBy.length > 0) {
+      skillPath = found.managedBy[0].path;
+    }
+  }
+
   if (!skillPath || !fs.existsSync(skillPath)) {
     return res.status(404).json({ success: false, error: 'Skill directory not found' });
   }
@@ -104,9 +115,18 @@ router.get('/skill-detail', (req, res) => {
  * Save updated SKILL.md
  */
 router.post('/save-skill', (req, res) => {
-  const { skillPath, content } = req.body;
+  let { skillPath, skillId, content } = req.body;
+
+  if (!skillPath && skillId) {
+    const { skills } = scanAllSkills();
+    const found = skills.find(s => s.id === skillId.toLowerCase());
+    if (found && found.managedBy && found.managedBy.length > 0) {
+      skillPath = found.managedBy[0].path;
+    }
+  }
+
   if (!skillPath || typeof content !== 'string') {
-    return res.status(400).json({ success: false, error: 'Invalid parameters' });
+    return res.status(400).json({ success: false, error: 'Invalid parameters: skillPath and content are required' });
   }
 
   try {
@@ -140,7 +160,16 @@ router.post('/sync', (req, res) => {
  * Fork built-in skill into user custom skill
  */
 router.post('/fork', (req, res) => {
-  const { sourcePath, newName, targetEnv } = req.body;
+  let { sourcePath, skillId, newName, targetEnv } = req.body;
+
+  if (!sourcePath && skillId) {
+    const { skills } = scanAllSkills();
+    const found = skills.find(s => s.id === skillId.toLowerCase());
+    if (found && found.managedBy && found.managedBy.length > 0) {
+      sourcePath = found.managedBy[0].path;
+    }
+  }
+
   if (!sourcePath) {
     return res.status(400).json({ success: false, error: 'Source path is required' });
   }
@@ -207,12 +236,26 @@ router.post('/diff', (req, res) => {
 });
 
 /**
- * Open folder in editor
+ * Open folder in editor by path or skillId
  */
 router.post('/open-editor', (req, res) => {
-  const { path: dirPath, editor } = req.body;
+  let { path: dirPath, skillId, targetId, editor } = req.body;
+
+  if (!dirPath && skillId) {
+    const { skills } = scanAllSkills();
+    const found = skills.find(s => s.id === skillId.toLowerCase());
+    if (found && found.managedBy && found.managedBy.length > 0) {
+      if (targetId) {
+        const specific = found.managedBy.find(m => m.targetId === targetId);
+        dirPath = specific ? specific.path : found.managedBy[0].path;
+      } else {
+        dirPath = found.managedBy[0].path;
+      }
+    }
+  }
+
   if (!dirPath) {
-    return res.status(400).json({ success: false, error: 'Path is required' });
+    return res.status(400).json({ success: false, error: 'Path or valid skillId is required' });
   }
 
   try {

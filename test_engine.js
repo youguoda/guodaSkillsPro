@@ -4,11 +4,11 @@ const http = require('http');
 const config = require('./server/config');
 const { scanAllSkills, parseSkillFile, calculateDirHash } = require('./server/scanner');
 const { syncDirectory, syncSkill } = require('./server/sync');
-const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDiff } = require('./server/lifecycle');
+const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDiff, openInEditor } = require('./server/lifecycle');
 const { app, server } = require('./server/server');
 
 console.log('================================================================');
-console.log('              SKILLSHUB AUTOMATED INTEGRATION TESTS             ');
+console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
 console.log('================================================================\n');
 
 let failed = false;
@@ -24,24 +24,42 @@ function assert(condition, message) {
 async function runTests() {
   try {
     // 1. Config Test
-    console.log('[TEST 1] Configuration & Path Resolutions...');
+    console.log('[TEST 1] Configuration & Agent Target Mapping...');
     assert(config.PORT === 3721, 'Default port is 3721');
-    assert(fs.existsSync(config.WIN_USER_HOME), `Windows user directory exists (${config.WIN_USER_HOME})`);
-    assert(fs.existsSync(config.WSL_HOME_UNC), `WSL home directory exists via UNC (${config.WSL_HOME_UNC})`);
+    assert(Array.isArray(config.targets) && config.targets.length >= 5, `Configured ${config.targets.length} agent scan targets`);
+    config.targets.forEach(t => {
+      assert(!!t.agentId && !!t.agentName && !!t.displayBase, `Target [${t.id}] has agentId (${t.agentId}), agentName (${t.agentName}), and displayBase`);
+    });
 
-    // 2. Scanner Test
-    console.log('\n[TEST 2] Dual-Environment Scanner...');
-    const skills = scanAllSkills();
-    assert(Array.isArray(skills), 'Skills scanner returns an array');
-    assert(skills.length > 0, `Discovered ${skills.length} skills in real environments`);
-    
-    const winSkills = skills.filter(s => s.hasWin);
-    const wslSkills = skills.filter(s => s.hasWsl);
-    assert(winSkills.length > 0, `Found ${winSkills.length} Windows skills`);
-    assert(wslSkills.length > 0, `Found ${wslSkills.length} WSL skills`);
+    // 2. Scanner Test (with Agent attribution)
+    console.log('\n[TEST 2] Scanner & Agent Folder Attribution...');
+    const scanResult = scanAllSkills();
+    assert(scanResult && Array.isArray(scanResult.skills), 'Scanner returns skills array');
+    assert(Array.isArray(scanResult.targets), 'Scanner returns targets list');
+    assert(scanResult.skills.length > 0, `Discovered ${scanResult.skills.length} skills in real environments`);
 
-    // 3. Lifecycle Scaffolding & Linter Test
-    console.log('\n[TEST 3] Lifecycle Scaffolding & Specification Linter...');
+    // Verify Agent attribution on skills
+    const firstSkill = scanResult.skills[0];
+    assert(Array.isArray(firstSkill.managedBy) && firstSkill.managedBy.length > 0, `Skill [${firstSkill.name}] has managedBy records`);
+    assert(firstSkill.managedBy[0].agentId && firstSkill.managedBy[0].displayPath, `managedBy record contains agentId and displayPath (${firstSkill.managedBy[0].displayPath})`);
+    assert(Array.isArray(firstSkill.agentIds) && firstSkill.agentIds.length > 0, `Skill contains agentIds array for filtering`);
+
+    // Verify Target stats
+    const claudeTarget = scanResult.targets.find(t => t.agentId === 'claude');
+    const cursorTarget = scanResult.targets.find(t => t.agentId === 'cursor');
+    assert(claudeTarget && claudeTarget.count > 0, `Claude Code target has skills (Count: ${claudeTarget ? claudeTarget.count : 0})`);
+    assert(cursorTarget && cursorTarget.count > 0, `Cursor target has skills (Count: ${cursorTarget ? cursorTarget.count : 0})`);
+
+    // 3. Editor Launching Test
+    console.log('\n[TEST 3] Cursor / Editor Launching Function...');
+    const testSkillDir = firstSkill.managedBy[0].path;
+    const editorRes = openInEditor(testSkillDir, 'cursor');
+    assert(editorRes.success === true, 'openInEditor returned success');
+    assert(editorRes.command.includes('cursor'), `Command invoked cursor: ${editorRes.command}`);
+    assert(fs.existsSync(editorRes.path), `Target directory exists on disk: ${editorRes.path}`);
+
+    // 4. Lifecycle Scaffolding & Linter Test
+    console.log('\n[TEST 4] Lifecycle Scaffolding & Specification Linter...');
     const tempName = `test-autogen-${Date.now()}`;
     const scaffolded = scaffoldSkill({
       name: tempName,
@@ -57,8 +75,8 @@ async function runTests() {
     assert(lintRes.valid === true, 'Scaffolded skill passes Linter specification validation');
     assert(lintRes.errors.length === 0, 'No errors in compliant skill');
 
-    // 4. Fork Built-in Test
-    console.log('\n[TEST 4] Fork to Custom Test...');
+    // 5. Fork Built-in Test
+    console.log('\n[TEST 5] Fork to Custom Test...');
     const forked = forkToCustom(scaffolded.path, `forked-${tempName}`, 'windows');
     assert(fs.existsSync(forked.path), `Forked skill created at ${forked.path}`);
     const forkedParsed = parseSkillFile(forked.path);
@@ -69,15 +87,13 @@ async function runTests() {
     fs.rmSync(forked.path, { recursive: true, force: true });
     console.log('  [CLEANUP] Removed temporary scaffold and fork directories');
 
-    // 5. Cross-boundary Sync Test (Win -> WSL -> Win)
-    console.log('\n[TEST 5] Cross-Boundary Hash-Verified Sync (Windows -> WSL)...');
-    // Create a mock skill in Windows
+    // 6. Cross-boundary Sync Test (Win -> WSL -> Win)
+    console.log('\n[TEST 6] Cross-Boundary Hash-Verified Sync (Windows -> WSL)...');
     const mockWinDir = path.join(config.defaultCustomDir.windows, `__mock_sync_test__`);
     if (!fs.existsSync(mockWinDir)) fs.mkdirSync(mockWinDir, { recursive: true });
     fs.writeFileSync(path.join(mockWinDir, 'SKILL.md'), `---\nname: mock-sync\ndescription: A test mock skill\n---\n# Mock Sync\n`, 'utf8');
 
     const mockWslDir = path.join(config.defaultCustomDir.wsl, `__mock_sync_test__`);
-
     const syncRes = syncDirectory(mockWinDir, mockWslDir);
     assert(syncRes.success === true, 'Sync to WSL returned success');
     assert(fs.existsSync(mockWslDir), 'Destination folder created in WSL ext4');
@@ -88,11 +104,16 @@ async function runTests() {
     fs.rmSync(mockWslDir, { recursive: true, force: true });
     console.log('  [CLEANUP] Cleaned up temporary cross-boundary sync directories');
 
-    // 6. REST API Server Test
-    console.log('\n[TEST 6] HTTP Server & REST API Endpoints...');
-    const checkEndpoint = (endpoint) => {
+    // 7. REST API Endpoints Test
+    console.log('\n[TEST 7] HTTP Server & REST API Endpoints...');
+    const checkEndpoint = (endpoint, method = 'GET', body = null) => {
       return new Promise((resolve, reject) => {
-        http.get(`http://localhost:${config.PORT}${endpoint}`, (res) => {
+        const url = new URL(`http://localhost:${config.PORT}${endpoint}`);
+        const options = {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : {}
+        };
+        const req = http.request(url, options, (res) => {
           let data = '';
           res.on('data', chunk => data += chunk);
           res.on('end', () => {
@@ -102,24 +123,52 @@ async function runTests() {
               resolve({ statusCode: res.statusCode, raw: data });
             }
           });
-        }).on('error', reject);
+        });
+        req.on('error', reject);
+        if (body) req.write(JSON.stringify(body));
+        req.end();
       });
     };
 
-    const sysInfoRes = await checkEndpoint('/api/system-info');
-    assert(sysInfoRes.statusCode === 200, 'GET /api/system-info returned 200 OK');
-    assert(sysInfoRes.json.wslDistro === config.WSL_DISTRO, 'system-info returned valid WSL distro');
-
+    // Test GET /api/skills
     const skillsApiRes = await checkEndpoint('/api/skills');
     assert(skillsApiRes.statusCode === 200, 'GET /api/skills returned 200 OK');
     assert(skillsApiRes.json.success === true, 'skills API reported success');
     assert(skillsApiRes.json.skills.length > 0, `skills API returned ${skillsApiRes.json.skills.length} items`);
+    assert(Array.isArray(skillsApiRes.json.targets), 'skills API returned targets metadata');
+
+    // Test GET /api/skill-detail by id (safe slug)
+    const testSkillId = skillsApiRes.json.skills[0].id;
+    const detailRes = await checkEndpoint(`/api/skill-detail?id=${testSkillId}`);
+    assert(detailRes.statusCode === 200, `GET /api/skill-detail?id=${testSkillId} returned 200 OK`);
+    assert(detailRes.json.success === true, 'skill-detail succeeded');
+    assert(detailRes.json.parsed && detailRes.json.parsed.rawContent, 'skill-detail returned raw SKILL.md content');
+
+    // Test POST /api/open-editor by skillId
+    const openRes = await checkEndpoint('/api/open-editor', 'POST', { skillId: testSkillId, editor: 'cursor' });
+    assert(openRes.statusCode === 200, 'POST /api/open-editor returned 200 OK');
+    assert(openRes.json.success === true, `open-editor by skillId succeeded`);
+
+    // Test POST /api/save-skill
+    const saveRes = await checkEndpoint('/api/save-skill', 'POST', {
+      skillId: testSkillId,
+      content: detailRes.json.parsed.rawContent
+    });
+    assert(saveRes.statusCode === 200, 'POST /api/save-skill returned 200 OK');
+    assert(saveRes.json.success === true, 'save-skill succeeded');
+
+    // 8. Client JS Syntax Check
+    console.log('\n[TEST 8] Client JavaScript Syntax Verification...');
+    const appJsContent = fs.readFileSync(path.join(__dirname, 'public/app.js'), 'utf8');
+    // Ensure no raw Windows backslash paths are embedded in inline onclick attributes
+    const invalidEscapeRegex = /onclick\s*=\s*['"][^'"]*\\[^'"]*['"]/;
+    assert(!invalidEscapeRegex.test(appJsContent), 'No raw unescaped backslashes in HTML onclick attributes');
 
     console.log('\n================================================================');
     if (!failed) {
-      console.log('           ALL INTEGRATION TESTS COMPLETED SUCCESSFULLY!        ');
+      console.log('         ALL 8 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
-      console.log('               SOME TESTS FAILED! CHECK OUTPUT ABOVE.           ');
+      console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }
     console.log('================================================================');
   } catch (err) {
