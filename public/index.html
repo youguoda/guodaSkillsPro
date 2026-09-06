@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillsHub - AI Agent Skills 管理控制台</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Marked.js for Markdown Preview -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <!-- Logo & Title -->
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 font-bold text-lg text-white">
+          ⚡
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-bold text-lg text-white tracking-tight">SkillsHub</h1>
+            <span class="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-mono">Win + WSL2</span>
+          </div>
+          <p class="text-xs text-slate-400">AI Agent 技能跨环境控制中心</p>
+        </div>
+      </div>
+
+      <!-- Environment Badges & Action Buttons -->
+      <div class="flex items-center space-x-4">
+        <div class="hidden md:flex items-center space-x-3 text-xs bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 font-mono">
+          <div class="flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+            <span class="text-slate-300" id="env-win-user">Windows</span>
+          </div>
+          <span class="text-slate-600">|</span>
+          <div class="flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="text-slate-300" id="env-wsl-distro">WSL (Ubuntu)</span>
+          </div>
+        </div>
+
+        <button onclick="refreshSkills()" id="btn-refresh" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          <span>刷新扫描</span>
+        </button>
+
+        <button onclick="openNewSkillModal()" class="flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm shadow-indigo-600/40 transition">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          <span>新建 Skill</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+    <!-- Top Stats Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <!-- Total -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+        <span class="text-xs text-slate-400 font-medium">总技能数</span>
+        <span class="text-2xl font-bold text-white mt-1" id="stat-total">-</span>
+        <span class="text-[11px] text-slate-500 mt-1 font-mono">聚合跨环境</span>
+      </div>
+      <!-- Windows Only -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-blue-500/40 transition" onclick="setSyncFilter('windows_only')">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">仅 Windows</span>
+          <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+        </div>
+        <span class="text-2xl font-bold text-blue-400 mt-1" id="stat-win-only">-</span>
+        <span class="text-[11px] text-slate-500 mt-1">待同步至 WSL</span>
+      </div>
+      <!-- WSL Only -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-amber-500/40 transition" onclick="setSyncFilter('wsl_only')">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">仅 WSL</span>
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        </div>
+        <span class="text-2xl font-bold text-amber-400 mt-1" id="stat-wsl-only">-</span>
+        <span class="text-[11px] text-slate-500 mt-1">待同步至 Win</span>
+      </div>
+      <!-- Synced -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-emerald-500/40 transition" onclick="setSyncFilter('synced')">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">双端已对齐</span>
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        </div>
+        <span class="text-2xl font-bold text-emerald-400 mt-1" id="stat-synced">-</span>
+        <span class="text-[11px] text-slate-500 mt-1">哈希完全一致</span>
+      </div>
+      <!-- Built-in -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-purple-500/40 transition" onclick="setTierFilter('builtin')">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">官方内置</span>
+          <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+        </div>
+        <span class="text-2xl font-bold text-purple-400 mt-1" id="stat-builtin">-</span>
+        <span class="text-[11px] text-slate-500 mt-1">只读保护 / 可派生</span>
+      </div>
+      <!-- Downloaded -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between cursor-pointer hover:border-indigo-500/40 transition" onclick="setTierFilter('downloaded')">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">社区下载</span>
+          <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+        </div>
+        <span class="text-2xl font-bold text-indigo-400 mt-1" id="stat-downloaded">-</span>
+        <span class="text-[11px] text-slate-500 mt-1">绑定 Git Remote</span>
+      </div>
+    </div>
+
+    <!-- Filters & Search Toolbar -->
+    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center shadow-lg">
+      <!-- Search Box -->
+      <div class="relative flex-1 max-w-md">
+        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <input type="text" id="search-input" oninput="renderSkillsList()" placeholder="搜索技能名称、描述关键词..." class="w-full pl-10 pr-4 py-2 bg-slate-950/80 border border-slate-700/80 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition">
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <!-- Tier Filter Buttons -->
+        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="tier-filters">
+          <button onclick="setTierFilter('all')" data-tier="all" class="filter-tier-btn px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-medium transition">全部</button>
+          <button onclick="setTierFilter('builtin')" data-tier="builtin" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">官方内置</button>
+          <button onclick="setTierFilter('downloaded')" data-tier="downloaded" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">网上下载</button>
+          <button onclick="setTierFilter('custom')" data-tier="custom" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">自编技能</button>
+        </div>
+
+        <!-- Sync Filter Buttons -->
+        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="sync-filters">
+          <button onclick="setSyncFilter('all')" data-sync="all" class="filter-sync-btn px-2.5 py-1 rounded-lg bg-slate-800 text-white font-medium transition">所有状态</button>
+          <button onclick="setSyncFilter('synced')" data-sync="synced" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">双端对齐</button>
+          <button onclick="setSyncFilter('windows_only')" data-sync="windows_only" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">仅Win</button>
+          <button onclick="setSyncFilter('wsl_only')" data-sync="wsl_only" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">仅WSL</button>
+          <button onclick="setSyncFilter('diff')" data-sync="diff" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">内容差异</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skills List View -->
+    <div id="skills-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- Loading Placeholder -->
+      <div class="col-span-full py-16 text-center text-slate-500">
+        <svg class="animate-spin h-8 w-8 mx-auto text-indigo-500 mb-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <p class="text-sm">正在扫描 Windows 与 WSL 中的全部技能...</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL: Skill Detail & Markdown Light Editor -->
+  <div id="modal-editor" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <div class="flex items-center space-x-3">
+          <span id="modal-skill-icon" class="text-xl">📄</span>
+          <div>
+            <h2 id="modal-skill-name" class="font-bold text-base text-white font-mono">skill-name</h2>
+            <p id="modal-skill-path" class="text-xs text-slate-400 truncate max-w-md font-mono">/path/to/skill</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="triggerOpenEditor()" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition flex items-center space-x-1" title="在本地 Cursor 中打开">
+            <span>在 Cursor 打开</span>
+          </button>
+          <button onclick="closeEditorModal()" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- Linter Validation Banner -->
+        <div id="linter-banner" class="rounded-xl p-3 text-xs flex items-start space-x-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+          <span class="font-bold">✓ 规范校验通过</span>
+          <span id="linter-msg">YAML frontmatter 与渐进式披露结构完整</span>
+        </div>
+
+        <!-- Editor / Preview Tabs -->
+        <div class="flex border-b border-slate-800 space-x-4 text-xs font-medium">
+          <button id="tab-btn-edit" onclick="switchEditorTab('edit')" class="pb-2 text-indigo-400 border-b-2 border-indigo-500">编辑 SKILL.md</button>
+          <button id="tab-btn-preview" onclick="switchEditorTab('preview')" class="pb-2 text-slate-400 hover:text-slate-200">渲染预览</button>
+          <button id="tab-btn-files" onclick="switchEditorTab('files')" class="pb-2 text-slate-400 hover:text-slate-200">附带资源文件</button>
+        </div>
+
+        <!-- Edit View -->
+        <div id="view-edit" class="space-y-2">
+          <textarea id="editor-textarea" rows="18" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 leading-relaxed"></textarea>
+        </div>
+
+        <!-- Preview View -->
+        <div id="view-preview" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-6 prose prose-invert max-w-none text-xs text-slate-300 leading-relaxed">
+          <!-- Markdown rendered content -->
+        </div>
+
+        <!-- Files View -->
+        <div id="view-files" class="hidden space-y-2 text-xs">
+          <p class="text-slate-400">技能附带脚本与参考文档清单：</p>
+          <ul id="files-list" class="space-y-1 font-mono text-slate-300 bg-slate-950 p-4 rounded-xl border border-slate-800"></ul>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between">
+        <span class="text-xs text-slate-500" id="editor-save-tip">修改后保存将自动触发生命周期校验</span>
+        <div class="flex space-x-2">
+          <button onclick="closeEditorModal()" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition">取消</button>
+          <button id="btn-save-skill" onclick="saveSkillContent()" class="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition">保存并更新</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Diff Viewer (Win vs WSL) -->
+  <div id="modal-diff" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <div>
+          <h2 id="diff-modal-title" class="font-bold text-base text-white font-mono">差异对比: skill-name</h2>
+          <p class="text-xs text-slate-400">Windows 版本 vs WSL 版本</p>
+        </div>
+        <button onclick="closeDiffModal()" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 font-mono text-xs bg-slate-950">
+        <div id="diff-output" class="space-y-0.5"></div>
+      </div>
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-900 flex items-center justify-between text-xs">
+        <span class="text-slate-400">选择覆盖对齐方向：</span>
+        <div class="flex space-x-2">
+          <button id="btn-diff-sync-to-wsl" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition">以 Windows 为准覆盖 WSL</button>
+          <button id="btn-diff-sync-to-win" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-medium transition">以 WSL 为准覆盖 Windows</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: New Custom Skill Wizard -->
+  <div id="modal-new-skill" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="font-bold text-base text-white">✨ 新建 Agent Skill (脚手架向导)</h2>
+        <button onclick="closeNewSkillModal()" class="text-slate-400 hover:text-white transition">✕</button>
+      </div>
+      <div class="p-6 space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">技能唯一标识 (Name)</label>
+          <input type="text" id="new-skill-name" placeholder="如: react-component-reviewer" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <p class="text-[11px] text-slate-500 mt-1">仅允许小写字母、数字和连字符</p>
+        </div>
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">触发场景描述 (Description - 关键提示词)</label>
+          <textarea id="new-skill-desc" rows="3" placeholder="如: 当用户需要审查 React 组件性能或规范时使用此技能..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+          <p class="text-[11px] text-slate-500 mt-1">智能体会根据此描述判断何时激活该技能</p>
+        </div>
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">首发创建环境</label>
+          <select id="new-skill-env" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none">
+            <option value="windows">Windows 本地 (~/.claude/skills)</option>
+            <option value="wsl">WSL2 Linux (~/.cursor/skills-cursor)</option>
+          </select>
+        </div>
+      </div>
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-900/50 flex justify-end space-x-2">
+        <button onclick="closeNewSkillModal()" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white">取消</button>
+        <button onclick="createCustomSkill()" class="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg">创建标准骨架</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2"></div>
+
+  <!-- Main Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

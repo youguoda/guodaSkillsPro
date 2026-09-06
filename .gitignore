@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime / Temp
+*.bak*
+.tmp/
+__poc_sync_test__/
+
+# OS & Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
