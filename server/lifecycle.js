@@ -8,14 +8,15 @@ const { pathExists } = require('./fs-utils');
 const { sanitizeName, isNameCompliant, parseFrontmatter } = require('./skill-md');
 
 /**
- * 1. BUILT-IN: Fork a built-in or system skill into user's custom directory
+ * 1. BUILT-IN: Fork a built-in or system skill into user's custom directory.
+ * opts.baseDir overrides the destination root (used by the test sandbox).
  */
-async function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
+async function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows', opts = {}) {
   if (!(await pathExists(sourceSkillPath))) {
     throw new Error(`Source skill path does not exist: ${sourceSkillPath}`);
   }
 
-  const baseDest = config.defaultCustomDir[targetEnv] || config.defaultCustomDir.windows;
+  const baseDest = opts.baseDir || config.defaultCustomDir[targetEnv] || config.defaultCustomDir.windows;
   const cleanName = sanitizeName(newName || path.basename(sourceSkillPath));
   const destDir = path.join(baseDest, cleanName);
 
@@ -119,11 +120,11 @@ function getSkillDiff(fileA, fileB) {
 /**
  * 3. CUSTOM: Scaffold a new skill following agentskills.io standard
  */
-function scaffoldSkill({ name, description, targetEnv = 'windows' }) {
+function scaffoldSkill({ name, description, targetEnv = 'windows', baseDir }) {
   if (!name) throw new Error('Skill name is required');
   const cleanName = sanitizeName(name);
-  const baseDir = config.defaultCustomDir[targetEnv] || config.defaultCustomDir.windows;
-  const targetDir = path.join(baseDir, cleanName);
+  const base = baseDir || config.defaultCustomDir[targetEnv] || config.defaultCustomDir.windows;
+  const targetDir = path.join(base, cleanName);
 
   if (fs.existsSync(targetDir)) {
     throw new Error(`Directory already exists: ${targetDir}`);

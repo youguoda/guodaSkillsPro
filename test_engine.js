@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const config = require('./server/config');
@@ -21,6 +22,13 @@ function assert(condition, message) {
   } else {
     console.log(`  [PASS] ${message}`);
   }
+}
+
+// Test sandbox: fixtures live in the OS temp dir, never in production skill dirs
+function makeSandbox(label) {
+  const dir = path.join(os.tmpdir(), `skillshub-test-${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 async function runTests() {
@@ -62,51 +70,59 @@ async function runTests() {
     assert(editorRes.command.includes('cursor'), `Command invoked cursor: ${editorRes.command}`);
     assert(fs.existsSync(editorRes.path), `Target directory exists on disk: ${editorRes.path}`);
 
-    // 4. Lifecycle Scaffolding & Linter Test
-    console.log('\n[TEST 4] Lifecycle Scaffolding & Specification Linter...');
-    const tempName = `test-autogen-${Date.now()}`;
-    const scaffolded = scaffoldSkill({
-      name: tempName,
-      description: 'Use this skill when verifying automated testing frameworks.',
-      targetEnv: 'windows'
-    });
-    assert(fs.existsSync(scaffolded.path), `Scaffolded directory created at ${scaffolded.path}`);
-    assert(fs.existsSync(path.join(scaffolded.path, 'SKILL.md')), 'SKILL.md exists');
-    assert(fs.existsSync(path.join(scaffolded.path, 'scripts')), 'scripts/ directory exists');
-    assert(fs.existsSync(path.join(scaffolded.path, 'references')), 'references/ directory exists');
+    // 4. Lifecycle Scaffolding & Linter Test (sandboxed)
+    console.log('\n[TEST 4] Lifecycle Scaffolding & Specification Linter (sandbox)...');
+    const sandboxDir = makeSandbox('scaffold');
+    try {
+      const tempName = `test-autogen-${Date.now()}`;
+      const scaffolded = scaffoldSkill({
+        name: tempName,
+        description: 'Use this skill when verifying automated testing frameworks.',
+        targetEnv: 'windows',
+        baseDir: sandboxDir
+      });
+      assert(scaffolded.path.startsWith(sandboxDir), `Scaffolded inside the test sandbox, not production dirs`);
+      assert(fs.existsSync(scaffolded.path), `Scaffolded directory created at ${scaffolded.path}`);
+      assert(fs.existsSync(path.join(scaffolded.path, 'SKILL.md')), 'SKILL.md exists');
+      assert(fs.existsSync(path.join(scaffolded.path, 'scripts')), 'scripts/ directory exists');
+      assert(fs.existsSync(path.join(scaffolded.path, 'references')), 'references/ directory exists');
 
-    const lintRes = lintSkill(scaffolded.path);
-    assert(lintRes.valid === true, 'Scaffolded skill passes Linter specification validation');
-    assert(lintRes.errors.length === 0, 'No errors in compliant skill');
+      const lintRes = lintSkill(scaffolded.path);
+      assert(lintRes.valid === true, 'Scaffolded skill passes Linter specification validation');
+      assert(lintRes.errors.length === 0, 'No errors in compliant skill');
 
-    // 5. Fork Built-in Test
-    console.log('\n[TEST 5] Fork to Custom Test...');
-    const forked = await forkToCustom(scaffolded.path, `forked-${tempName}`, 'windows');
-    assert(fs.existsSync(forked.path), `Forked skill created at ${forked.path}`);
-    const forkedParsed = await parseSkillFile(forked.path);
-    assert(forkedParsed.name === `forked-${tempName}`, `Forked frontmatter updated name to: ${forkedParsed.name}`);
+      // 5. Fork Built-in Test (sandboxed)
+      console.log('\n[TEST 5] Fork to Custom Test (sandbox)...');
+      const forked = await forkToCustom(scaffolded.path, `forked-${tempName}`, 'windows', { baseDir: sandboxDir });
+      assert(forked.path.startsWith(sandboxDir), 'Forked inside the test sandbox');
+      assert(fs.existsSync(forked.path), `Forked skill created at ${forked.path}`);
+      const forkedParsed = await parseSkillFile(forked.path);
+      assert(forkedParsed.name === `forked-${tempName}`, `Forked frontmatter updated name to: ${forkedParsed.name}`);
+    } finally {
+      // Guaranteed cleanup even when assertions fail midway
+      fs.rmSync(sandboxDir, { recursive: true, force: true });
+      console.log('  [CLEANUP] Removed test sandbox (scaffold + fork with it)');
+    }
 
-    // Clean up temporary local test directories
-    fs.rmSync(scaffolded.path, { recursive: true, force: true });
-    fs.rmSync(forked.path, { recursive: true, force: true });
-    console.log('  [CLEANUP] Removed temporary scaffold and fork directories');
-
-    // 6. Cross-boundary Sync Test (Win -> WSL -> Win)
+    // 6. Cross-boundary Sync Test (Win -> WSL), fixtures sandboxed, cleanup guaranteed
     console.log('\n[TEST 6] Cross-Boundary Hash-Verified Sync (Windows -> WSL)...');
-    const mockWinDir = path.join(config.defaultCustomDir.windows, `__mock_sync_test__`);
-    if (!fs.existsSync(mockWinDir)) fs.mkdirSync(mockWinDir, { recursive: true });
-    fs.writeFileSync(path.join(mockWinDir, 'SKILL.md'), `---\nname: mock-sync\ndescription: A test mock skill\n---\n# Mock Sync\n`, 'utf8');
+    const syncWinSandbox = makeSandbox('sync');
+    const mockWinDir = path.join(syncWinSandbox, 'src-skill');
+    const wslSandbox = path.join(config.WSL_HOME_UNC, '.skillshub-test');
+    const mockWslDir = path.join(wslSandbox, '__mock_sync_test__');
+    try {
+      fs.mkdirSync(mockWinDir, { recursive: true });
+      fs.writeFileSync(path.join(mockWinDir, 'SKILL.md'), `---\nname: mock-sync\ndescription: A test mock skill\n---\n# Mock Sync\n`, 'utf8');
 
-    const mockWslDir = path.join(config.defaultCustomDir.wsl, `__mock_sync_test__`);
-    const syncRes = await syncDirectory(mockWinDir, mockWslDir);
-    assert(syncRes.success === true, 'Sync to WSL returned success');
-    assert(fs.existsSync(mockWslDir), 'Destination folder created in WSL ext4');
-    assert(syncRes.srcHash === syncRes.dstHash, `Source hash matches destination hash (${syncRes.srcHash})`);
-
-    // Clean up mock directories
-    fs.rmSync(mockWinDir, { recursive: true, force: true });
-    fs.rmSync(mockWslDir, { recursive: true, force: true });
-    console.log('  [CLEANUP] Cleaned up temporary cross-boundary sync directories');
+      const syncRes = await syncDirectory(mockWinDir, mockWslDir);
+      assert(syncRes.success === true, 'Sync to WSL returned success');
+      assert(fs.existsSync(mockWslDir), 'Destination folder created in WSL ext4');
+      assert(syncRes.srcHash === syncRes.dstHash, `Source hash matches destination hash (${syncRes.srcHash})`);
+    } finally {
+      fs.rmSync(syncWinSandbox, { recursive: true, force: true });
+      fs.rmSync(mockWslDir, { recursive: true, force: true });
+      console.log('  [CLEANUP] Cleaned up cross-boundary sync fixtures');
+    }
 
     // 7. REST API Endpoints Test
     console.log('\n[TEST 7] HTTP Server & REST API Endpoints...');
@@ -292,9 +308,43 @@ async function runTests() {
     const updNoUpstream = await checkEndpoint('/api/check-update', 'POST', { skillId: noUpstreamSkill.id });
     assert(updNoUpstream.statusCode === 400, `check-update without upstream -> ${updNoUpstream.statusCode}`);
 
+    // 14. Injectable Target Registry
+    console.log('\n[TEST 14] Injectable Target Registry (fixture scan)...');
+    const fixtureRoot = makeSandbox('fixture');
+    try {
+      const flatSkill = path.join(fixtureRoot, 'fixture-alpha');
+      const nestedSkill = path.join(fixtureRoot, 'category', 'fixture-beta');
+      fs.mkdirSync(flatSkill, { recursive: true });
+      fs.writeFileSync(path.join(flatSkill, 'SKILL.md'), '---\nname: fixture-alpha\ndescription: Fixture skill alpha for injected target scan testing.\n---\n# Alpha\n', 'utf8');
+      fs.mkdirSync(nestedSkill, { recursive: true });
+      fs.writeFileSync(path.join(nestedSkill, 'SKILL.md'), '---\nname: fixture-beta\ndescription: Fixture skill beta nested in a category folder for scan testing.\n---\n# Beta\n', 'utf8');
+
+      const fixtureTargets = [{
+        id: 'fixture-win',
+        name: 'Fixture Target',
+        env: 'windows',
+        agentId: 'fixture-agent',
+        agentName: 'Fixture Agent',
+        tier: 'mixed',
+        dir: fixtureRoot,
+        displayBase: 'fixture',
+        recursive: true
+      }];
+      const fixtureScan = await scanAllSkills(fixtureTargets);
+      assert(fixtureScan.skills.length === 2, `Fixture scan found exactly 2 skills (${fixtureScan.skills.length})`);
+      assert(fixtureScan.skills.every(s => s.agentIds.includes('fixture-agent')), 'Fixture skills attributed to the injected agent');
+      assert(fixtureScan.targets[0].id === 'fixture-win' && fixtureScan.targets[0].count === 2, 'Target stats computed for the injected target');
+
+      const defaultInventory = await getInventory();
+      assert(!defaultInventory.skills.some(s => s.id.startsWith('fixture-')), 'Injected scan does not leak into the cached default inventory');
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+      console.log('  [CLEANUP] Removed fixture sandbox');
+    }
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('        ALL 13 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 14 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

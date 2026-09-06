@@ -128,12 +128,14 @@ async function discoverSkillDirectories(baseDir, maxDepth = 2, currentDepth = 0)
 }
 
 /**
- * Scans all configured agent targets and returns a unified, cross-environment skills inventory
+ * Scans the given agent targets (defaults to the registered config.targets)
+ * and returns a unified, cross-environment skills inventory.
+ * Targets are injectable so tests can point at fixture directories.
  */
-async function scanAllSkills() {
+async function scanAllSkills(targets = config.targets) {
   // 1. Load lockfile(s)
   const lockfileMap = new Map();
-  for (const target of config.targets) {
+  for (const target of targets) {
     if (target.lockfile && (await pathExists(target.lockfile))) {
       try {
         const data = JSON.parse(await fsp.readFile(target.lockfile, 'utf8'));
@@ -151,11 +153,11 @@ async function scanAllSkills() {
   // 2. Discover all skill folders across all targets
   const rawList = [];
   const targetCounts = {};
-  for (const target of config.targets) {
+  for (const target of targets) {
     targetCounts[target.id] = 0;
   }
 
-  for (const target of config.targets) {
+  for (const target of targets) {
     if (!(await pathExists(target.dir))) continue;
 
     try {
@@ -338,7 +340,7 @@ async function scanAllSkills() {
   unifiedList.sort((a, b) => a.name.localeCompare(b.name));
 
   // Build target stats
-  const targetStats = await Promise.all(config.targets.map(async t => ({
+  const targetStats = await Promise.all(targets.map(async t => ({
     id: t.id,
     name: t.name,
     agentId: t.agentId,
