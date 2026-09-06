@@ -388,6 +388,70 @@
     </div>
   </div>
 
+  <!-- MODAL: Skill Guide — 了解与使用 -->
+  <div id="modal-guide" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+        <div class="flex items-center space-x-3 min-w-0">
+          <span class="text-2xl">📖</span>
+          <div class="min-w-0">
+            <div class="flex items-center space-x-2">
+              <h2 id="guide-skill-name" class="font-bold text-base text-white font-mono truncate">skill-name</h2>
+              <span id="guide-fav-star" class="hidden text-lg" title="已收藏">⭐</span>
+            </div>
+            <p id="guide-skill-desc" class="text-xs text-slate-400 truncate"></p>
+          </div>
+        </div>
+        <button onclick="closeGuideModal()" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition ml-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-5">
+        <!-- 使用区 -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-300">🚀 如何使用这个技能</span>
+            <span id="guide-usage-stat" class="text-[11px] text-slate-500 font-mono">尚未使用</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <button onclick="copySkillPrompt()" class="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition font-medium">📋 复制触发提示词</button>
+            <button id="guide-fav-btn" onclick="toggleGuideFavorite()" class="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg transition">⭐ 收藏</button>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs pt-1 border-t border-slate-800/80">
+            <span class="text-slate-400 pt-1.5">安装到其他 Agent：</span>
+            <select id="guide-install-select" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[280px]"></select>
+            <button onclick="installSkillToTargetFromGuide()" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg transition font-medium">🚀 安装</button>
+          </div>
+          <p class="text-[11px] text-slate-500">提示词可粘贴给任意 Agent；「安装」会把技能目录镜像到目标 Agent 的技能库（哈希校验），安装后该 Agent 即可自动触发。</p>
+        </div>
+
+        <!-- 关键事实 -->
+        <div id="guide-facts" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs"></div>
+
+        <!-- SKILL.md 渲染 -->
+        <div class="space-y-2">
+          <span class="text-xs font-semibold text-slate-300">📄 SKILL.md 内容</span>
+          <div id="guide-markdown" class="bg-slate-950 border border-slate-800 rounded-xl p-6 prose prose-invert max-w-none text-xs text-slate-300 leading-relaxed"></div>
+        </div>
+
+        <!-- 附带文件 -->
+        <div class="space-y-2">
+          <span class="text-xs font-semibold text-slate-300">🗂️ 附带脚本与资源</span>
+          <ul id="guide-files" class="space-y-1 font-mono text-[11px] text-slate-300 bg-slate-950 p-4 rounded-xl border border-slate-800"></ul>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between">
+        <span id="guide-current-path" class="text-xs text-slate-500 font-mono truncate"></span>
+        <button onclick="closeGuideModal()" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2"></div>
 

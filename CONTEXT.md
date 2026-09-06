@@ -13,6 +13,8 @@
 | **Inventory (库存)** | 一次全量扫描的缓存结果。读路径必须走 `getInventory()`；一切变更路由完成后必须 `invalidateInventory()`。手动刷新走 `?force=1`。 |
 | **Override (人工覆盖)** | 用户在 `server/data/user_overrides.json` 中持久化的人工指定（tier / upstream / tags / notes），优先级高于机器判定，可一键恢复自动判定。 |
 | **Sync (跨端镜像)** | Windows ↔ WSL 实例间的哈希校验复制（`\\wsl.localhost` 9P 共享）。哈希不可信时如实报 `unknown`，绝不假报 `synced`。 |
+| **Install (安装)** | 把一个 Skill 的实例部署到另一个已注册 Agent 目标目录（`deploy.js`，复用 sync 的备份+哈希校验；目标已有同名技能时报 409）。 |
+| **Usage (使用记录)** | 每个技能的 view / copy_prompt / install 计数、最近使用时间与收藏标记，持久化于 `server/data/usage.json`。属用户元数据：不参与库存缓存失效。 |
 
 ## Module 地图
 
@@ -39,3 +41,6 @@
 
 ### ADR-0004 — 同步 I/O 禁止进入请求路径
 扫描 / 复制 / git 嗅探全部异步化（fs.promises、execFile）。`execSync`/`cpSync` 不得在 Express 处理器中使用；git 调用必须 execFile 数组参数 + URL scheme 白名单。
+
+### ADR-0005 — 「使用」指资产管理动作，不指调起 AI
+SkillsHub 对技能的「使用」= 复制触发提示词（用户粘贴给任意 Agent）、安装到其他 Agent 目录、收藏与计数。直接调起 AI 执行技能是 Agent CLI 的职责，不在本工具边界内。

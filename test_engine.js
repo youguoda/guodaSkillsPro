@@ -9,6 +9,8 @@ const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDif
 const { app, server } = require('./server/server');
 const { setOverride, deleteOverride, getOverrides } = require('./server/overrides');
 const { parseFrontmatter, sanitizeName, isNameCompliant } = require('./server/skill-md');
+const { recordUsage, setFavorite, resetUsage } = require('./server/usage');
+const { installSkillToTarget } = require('./server/deploy');
 
 console.log('================================================================');
 console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
@@ -342,9 +344,56 @@ async function runTests() {
       console.log('  [CLEANUP] Removed fixture sandbox');
     }
 
+    // 15. Skill Guide & Use: usage tracking, favorite, cross-agent install
+    console.log('\n[TEST 15] Skill Guide: Usage / Favorite / Cross-Agent Install...');
+    const guideProbe = skillsPayload.skills[0].id;
+    try {
+      const use1 = await checkEndpoint('/api/use-skill', 'POST', { skillId: guideProbe, action: 'view' });
+      assert(use1.statusCode === 200 && use1.json.usage.uses === 1, 'use-skill records the first view');
+      const use2 = await checkEndpoint('/api/use-skill', 'POST', { skillId: guideProbe, action: 'copy_prompt' });
+      assert(use2.statusCode === 200 && use2.json.usage.uses === 2, `usage counter increments (${use2.json.usage.uses})`);
+
+      const fav = await checkEndpoint('/api/favorite', 'POST', { skillId: guideProbe, favorite: true });
+      assert(fav.statusCode === 200 && fav.json.usage.favorite === true, 'favorite flag set');
+
+      const merged = await checkEndpoint('/api/skills');
+      const mergedSkill = merged.json.skills.find(s => s.id === guideProbe);
+      assert(mergedSkill.usage && mergedSkill.usage.uses === 2 && mergedSkill.usage.favorite === true, 'usage metadata merged into /api/skills');
+
+      const instBadSkill = await checkEndpoint('/api/install-skill', 'POST', { skillId: '__nope__', targetId: 'win-claude' });
+      assert(instBadSkill.statusCode === 404, `install unknown skill -> ${instBadSkill.statusCode}`);
+
+      const instBadTarget = await checkEndpoint('/api/install-skill', 'POST', { skillId: guideProbe, targetId: '__nope__' });
+      assert(instBadTarget.statusCode === 400, `install unknown target -> ${instBadTarget.statusCode}`);
+
+      const ownedTargetId = mergedSkill.managedBy[0].targetId;
+      const instOwned = await checkEndpoint('/api/install-skill', 'POST', { skillId: guideProbe, targetId: ownedTargetId });
+      assert(instOwned.statusCode === 409, `install into already-owned target -> ${instOwned.statusCode}`);
+
+      // Module-level install with fixture sandboxes (never touches production dirs)
+      const installSrc = makeSandbox('install-src');
+      fs.writeFileSync(path.join(installSrc, 'SKILL.md'), '---\nname: install-probe\ndescription: Probe skill for cross-agent install verification.\n---\n# Probe\n', 'utf8');
+      fs.mkdirSync(path.join(installSrc, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(installSrc, 'scripts', 'run.sh'), 'echo hi\n', 'utf8');
+      const installDst = makeSandbox('install-dst');
+      const fakeTarget = { id: 'fixture-install', name: 'Fixture Install Target', dir: installDst };
+
+      const inst = await installSkillToTarget(installSrc, fakeTarget);
+      assert(inst.success === true && inst.srcHash === inst.dstHash, `Fixture install hash-verified (${inst.dstHash})`);
+      assert(fs.existsSync(path.join(inst.destDir, 'SKILL.md')) && fs.existsSync(path.join(inst.destDir, 'scripts', 'run.sh')), 'Installed folder carries SKILL.md and scripts/');
+
+      let threw409 = false;
+      try { await installSkillToTarget(installSrc, fakeTarget); } catch (e) { threw409 = e.statusCode === 409; }
+      assert(threw409, 'Duplicate install rejected with 409');
+    } finally {
+      resetUsage(guideProbe);
+      resetUsage('__usage_probe__');
+      console.log('  [CLEANUP] Reset probe usage entries');
+    }
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('        ALL 14 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 15 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

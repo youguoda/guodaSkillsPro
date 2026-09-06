@@ -10,6 +10,8 @@ const { syncDirectory, syncSkillByEnv } = require('./sync');
 const { getOverrides, setOverride, deleteOverride } = require('./overrides');
 const { HttpError, assertContainedSkillPath } = require('./guard');
 const { TIERS, SYNC_STATUSES, tierLabel, tierIcon } = require('./vocab');
+const { recordUsage, setFavorite, mergeUsage } = require('./usage');
+const { installSkillToTarget } = require('./deploy');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -76,7 +78,7 @@ router.get('/skills', async (req, res) => {
         { id: 'wsl', label: `WSL: Cursor skills  (${config.defaultCustomDir.wsl})` }
       ]
     };
-    res.json({ success: true, stats, targets, meta, skills });
+    res.json({ success: true, stats, targets, meta, skills: mergeUsage(skills) });
   } catch (err) {
     sendError(res, err);
   }
@@ -352,6 +354,68 @@ router.post('/reset-override', (req, res) => {
     const success = deleteOverride(skillId);
     if (success) invalidateInventory();
     res.json({ success, message: success ? 'Override removed' : 'No override existed' });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+/**
+ * Guide & Use: record a usage event (view / copy_prompt / install)
+ */
+router.post('/use-skill', (req, res) => {
+  const { skillId, action } = req.body;
+  if (!skillId) {
+    return res.status(400).json({ success: false, error: 'skillId is required' });
+  }
+
+  try {
+    const entry = recordUsage(skillId, action || 'view');
+    res.json({ success: true, usage: entry });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+/**
+ * Guide & Use: toggle the favorite flag
+ */
+router.post('/favorite', (req, res) => {
+  const { skillId, favorite } = req.body;
+  if (!skillId || typeof favorite !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'skillId and boolean favorite are required' });
+  }
+
+  try {
+    const entry = setFavorite(skillId, favorite);
+    res.json({ success: true, usage: entry });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+/**
+ * Guide & Use: install a skill into another registered agent target (by ids)
+ */
+router.post('/install-skill', async (req, res) => {
+  const { skillId, targetId } = req.body;
+  if (!skillId || !targetId) {
+    return res.status(400).json({ success: false, error: 'skillId and targetId are required' });
+  }
+
+  try {
+    const { skill, instance } = resolveSkill(await getInventory(), skillId);
+    if (!skill || !instance) throw new HttpError(404, `Unknown skill: ${skillId}`);
+
+    const target = config.targets.find(t => t.id === targetId);
+    if (!target) throw new HttpError(400, `Unknown install target: ${targetId}`);
+    if (skill.managedBy.some(m => m.targetId === targetId)) {
+      throw new HttpError(409, `Skill is already installed in ${target.name}`);
+    }
+
+    const result = await installSkillToTarget(instance.path, target);
+    recordUsage(skillId, 'install');
+    invalidateInventory();
+    res.json({ success: true, result });
   } catch (err) {
     sendError(res, err);
   }

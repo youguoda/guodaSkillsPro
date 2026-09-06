@@ -322,6 +322,9 @@ function renderSkillsList() {
     // Manual attribute override entry
     actionButtons += `<button onclick="openOverrideModal('${skill.id}')" class="px-2.5 py-1 text-[11px] ${skill.isOverridden ? 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'} rounded-lg transition" title="人工调整类别 / 绑定上游 Git / 标签与备注">⚙️ 调整属性</button>`;
 
+    // Guide & Use entry — learn what it does, install elsewhere, favorite
+    actionButtons = `<button onclick="openGuideModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg transition font-medium" title="了解技能内容并使用：复制提示词 / 安装到其他 Agent / 收藏">📖 了解与使用</button>` + actionButtons;
+
     // View & Edit button
     actionButtons += `<button onclick="openEditorModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">查看 / 编辑</button>`;
 
@@ -335,6 +338,8 @@ function renderSkillsList() {
               <h3 class="font-bold text-sm text-white font-mono truncate" title="${escapeHtml(skill.name)}">${escapeHtml(skill.name)}</h3>
             </div>
             <div class="flex items-center space-x-1.5 flex-shrink-0">
+              ${skill.usage && skill.usage.favorite ? '<span title="已收藏">⭐</span>' : ''}
+              ${skill.usage && skill.usage.uses > 0 ? `<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800/80 text-slate-400 border border-slate-700 font-mono" title="已使用 ${skill.usage.uses} 次">▸${skill.usage.uses}</span>` : ''}
               ${tierBadgeHtml}
               ${skill.isOverridden ? '<span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="该技能属性被人工指定覆盖，优先于自动探测">✋ 人工</span>' : ''}
             </div>
@@ -689,6 +694,211 @@ function triggerOpenEditorFromModal() {
 
 function closeEditorModal() {
   document.getElementById('modal-editor').classList.add('hidden');
+}
+
+// ---------------------------------------------------------------------
+// Skill Guide Modal (了解与使用)
+// ---------------------------------------------------------------------
+let guideSkillId = null;
+
+async function openGuideModal(skillId) {
+  const skill = allSkills.find(s => s.id === skillId);
+  if (!skill) return;
+  guideSkillId = skillId;
+
+  document.getElementById('guide-skill-name').textContent = skill.name;
+  document.getElementById('guide-skill-desc').textContent = skill.description || '未提供描述';
+  document.getElementById('guide-fav-star').classList.toggle('hidden', !(skill.usage && skill.usage.favorite));
+  const favBtn = document.getElementById('guide-fav-btn');
+  favBtn.textContent = (skill.usage && skill.usage.favorite) ? '⭐ 已收藏' : '☆ 收藏';
+  updateGuideUsageStat(skill.usage);
+
+  // Install targets: every registered target this skill does NOT live in yet
+  const select = document.getElementById('guide-install-select');
+  const owned = new Set((skill.managedBy || []).map(m => m.targetId));
+  const candidates = appTargets.filter(t => t.exists && !owned.has(t.id));
+  select.innerHTML = candidates.length
+    ? candidates.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)} (${t.env === 'windows' ? 'Win' : 'WSL'})</option>`).join('')
+    : '<option value="">该技能已覆盖全部 Agent 目录</option>';
+
+  // First instance drives the rendered content
+  const first = (skill.managedBy || [])[0];
+  document.getElementById('guide-current-path').textContent = first ? first.path : '';
+
+  document.getElementById('guide-markdown').innerHTML = '<p class="text-slate-500 text-center py-6">正在加载 SKILL.md ...</p>';
+  document.getElementById('guide-files').innerHTML = '<li class="text-slate-500 italic">加载中...</li>';
+  document.getElementById('modal-guide').classList.remove('hidden');
+
+  // Record the view usage (fire-and-forget; keep displayed value until refresh)
+  recordGuideUsage('view');
+
+  try {
+    const res = await fetch(`/api/skill-detail?path=${encodeURIComponent(first ? first.path : '')}`);
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('guide-markdown').innerHTML = marked.parse(data.parsed.rawContent || '');
+      const filesList = document.getElementById('guide-files');
+      filesList.innerHTML = (data.files && data.files.length)
+        ? data.files.map(f => `<li class="flex items-center justify-between border-b border-slate-900 last:border-0"><span>${f.name.endsWith('.sh') || f.name.endsWith('.py') ? '⚙️' : '📄'} ${escapeHtml(f.path)}</span><span class="text-slate-500 text-[10px]">${(f.size / 1024).toFixed(1)} KB</span></li>`).join('')
+        : '<li class="text-slate-500 italic">无附带文件，仅 SKILL.md 本体</li>';
+      renderGuideFacts(skill, data.files ? data.files.length : 0);
+    } else {
+      document.getElementById('guide-markdown').innerHTML = `<p class="text-rose-400">加载失败: ${escapeHtml(data.error || '')}</p>`;
+    }
+  } catch (err) {
+    document.getElementById('guide-markdown').innerHTML = `<p class="text-rose-400">加载异常: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderGuideFacts(skill, fileCount) {
+  const facts = [
+    { label: '类别', value: `${tierIconOf(skill.tier)} ${tierLabelOf(skill.tier)}${skill.isOverridden ? ' (人工)' : ''}` },
+    { label: '双端状态', value: (appMeta.syncStatuses || []).find(s => s.id === skill.syncStatus)?.label || skill.syncStatus },
+    { label: '归属 Agent', value: (skill.agentLabels || []).join('、') || '无' },
+    { label: '文件数', value: `${fileCount} 个` }
+  ];
+  if (skill.upstream) facts.push({ label: '上游仓库', value: skill.upstream.source });
+  if (skill.customTags && skill.customTags.length) facts.push({ label: '标签', value: skill.customTags.map(t => `#${t}`).join(' ') });
+
+  document.getElementById('guide-facts').innerHTML = facts.map(f => `
+    <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500">${escapeHtml(f.label)}</div>
+      <div class="text-slate-200 mt-1 truncate" title="${escapeHtml(String(f.value))}">${escapeHtml(String(f.value))}</div>
+    </div>
+  `).join('');
+}
+
+function updateGuideUsageStat(usage) {
+  const el = document.getElementById('guide-usage-stat');
+  if (!el) return;
+  if (usage && usage.uses > 0) {
+    const when = usage.lastUsedAt ? new Date(usage.lastUsedAt).toLocaleString() : '';
+    el.textContent = `已使用 ${usage.uses} 次${when ? ' · 最近 ' + when : ''}`;
+  } else {
+    el.textContent = '尚未使用';
+  }
+}
+
+async function recordGuideUsage(action) {
+  if (!guideSkillId) return null;
+  try {
+    const res = await fetch('/api/use-skill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId: guideSkillId, action })
+    });
+    const data = await res.json();
+    if (data.success) {
+      updateGuideUsageStat(data.usage);
+      const skill = allSkills.find(s => s.id === guideSkillId);
+      if (skill) skill.usage = data.usage;
+      return data.usage;
+    }
+  } catch (e) { /* usage tracking must never break the guide */ }
+  return null;
+}
+
+function guidePromptText() {
+  const skill = allSkills.find(s => s.id === guideSkillId);
+  if (!skill) return '';
+  const first = (skill.managedBy || [])[0];
+  return [
+    `请使用技能「${skill.name}」处理我的请求。`,
+    skill.description ? `\n技能说明：${skill.description}` : '',
+    first ? `\n技能位置：${first.displayPath}/SKILL.md` : ''
+  ].filter(Boolean).join('\n');
+}
+
+async function copySkillPrompt() {
+  const text = guidePromptText();
+  if (!text) return;
+  const ok = await copyToClipboard(text);
+  if (ok) {
+    showToast('触发提示词已复制，粘贴给任意 Agent 即可使用', 'success');
+    await recordGuideUsage('copy_prompt');
+  } else {
+    showToast('复制失败，请手动选择文本复制', 'error');
+  }
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // Fallback for non-secure contexts
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+
+async function toggleGuideFavorite() {
+  const skill = allSkills.find(s => s.id === guideSkillId);
+  if (!skill) return;
+  const next = !(skill.usage && skill.usage.favorite);
+  try {
+    const res = await fetch('/api/favorite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId: guideSkillId, favorite: next })
+    });
+    const data = await res.json();
+    if (data.success) {
+      skill.usage = data.usage;
+      document.getElementById('guide-fav-star').classList.toggle('hidden', !next);
+      document.getElementById('guide-fav-btn').textContent = next ? '⭐ 已收藏' : '☆ 收藏';
+      showToast(next ? '已收藏' : '已取消收藏', 'success');
+      renderSkillsList();
+    } else {
+      showToast(`收藏失败: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`收藏出错: ${err.message}`, 'error');
+  }
+}
+
+async function installSkillToTargetFromGuide() {
+  const select = document.getElementById('guide-install-select');
+  const targetId = select ? select.value : '';
+  if (!targetId) {
+    showToast('没有可安装的目标目录', 'error');
+    return;
+  }
+  const skill = allSkills.find(s => s.id === guideSkillId);
+  showToast(`正在把 ${skill ? skill.name : guideSkillId} 安装到目标 Agent ...`, 'info');
+  try {
+    const res = await fetch('/api/install-skill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId: guideSkillId, targetId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`安装成功：${data.result.destDir}`, 'success');
+      await recordGuideUsage('install');
+      await refreshSkills();
+    } else {
+      showToast(`安装失败: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`安装出错: ${err.message}`, 'error');
+  }
+}
+
+function closeGuideModal() {
+  document.getElementById('modal-guide').classList.add('hidden');
+  guideSkillId = null;
 }
 
 // ---------------------------------------------------------------------
