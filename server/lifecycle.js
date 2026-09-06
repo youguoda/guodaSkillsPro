@@ -5,6 +5,7 @@ const { exec, execFile } = require('child_process');
 const config = require('./config');
 const { calculateDirHash } = require('./scanner');
 const { pathExists } = require('./fs-utils');
+const { sanitizeName, isNameCompliant, parseFrontmatter } = require('./skill-md');
 
 /**
  * 1. BUILT-IN: Fork a built-in or system skill into user's custom directory
@@ -15,9 +16,7 @@ async function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
   }
 
   const baseDest = config.defaultCustomDir[targetEnv] || config.defaultCustomDir.windows;
-  const cleanName = (newName || path.basename(sourceSkillPath))
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '-');
+  const cleanName = sanitizeName(newName || path.basename(sourceSkillPath));
   const destDir = path.join(baseDest, cleanName);
 
   if (fs.existsSync(destDir)) {
@@ -122,7 +121,7 @@ function getSkillDiff(fileA, fileB) {
  */
 function scaffoldSkill({ name, description, targetEnv = 'windows' }) {
   if (!name) throw new Error('Skill name is required');
-  const cleanName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+  const cleanName = sanitizeName(name);
   const baseDir = config.defaultCustomDir[targetEnv] || config.defaultCustomDir.windows;
   const targetDir = path.join(baseDir, cleanName);
 
@@ -176,27 +175,20 @@ function lintSkill(skillDir) {
   }
 
   const content = fs.readFileSync(skillMd, 'utf8');
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const { name: nameVal, description, hasValidFrontmatter } = parseFrontmatter(content);
 
-  if (!match) {
+  if (!hasValidFrontmatter) {
     errors.push('Missing or malformed YAML frontmatter (must start and end with ---)');
   } else {
-    const yaml = match[1];
-    const nameMatch = yaml.match(/^name:\s*(.+)$/m);
-    const descMatch = yaml.match(/^description:\s*(?:>-\s*)?([\s\S]*?)(?=\n[a-z_]+:|$)/m);
-
-    if (!nameMatch) {
+    if (!nameVal) {
       errors.push('Missing required frontmatter field: "name"');
-    } else {
-      const nameVal = nameMatch[1].trim();
-      if (!/^[a-z0-9_-]+$/.test(nameVal)) {
-        warnings.push('Skill name should only contain lowercase letters, numbers, hyphens and underscores');
-      }
+    } else if (!isNameCompliant(nameVal)) {
+      warnings.push('Skill name should only contain lowercase letters, numbers, hyphens and underscores');
     }
 
-    if (!descMatch || !descMatch[1].trim()) {
+    if (!description) {
       errors.push('Missing required frontmatter field: "description"');
-    } else if (descMatch[1].trim().length < 20) {
+    } else if (description.length < 20) {
       warnings.push('Description is very short; agents use description to trigger skills, so provide clear triggers (e.g. "Use this skill when...")');
     }
   }

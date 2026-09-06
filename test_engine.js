@@ -7,6 +7,7 @@ const { syncDirectory, syncSkill } = require('./server/sync');
 const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDiff, openInEditor } = require('./server/lifecycle');
 const { app, server } = require('./server/server');
 const { setOverride, deleteOverride, getOverrides } = require('./server/overrides');
+const { parseFrontmatter, sanitizeName, isNameCompliant } = require('./server/skill-md');
 
 console.log('================================================================');
 console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
@@ -255,9 +256,25 @@ async function runTests() {
     const badScheme = await checkUpstreamUpdate({ sourceUrl: 'file:///C:/Windows/System32/config' });
     assert(badScheme.success === false, 'file:// git URL scheme rejected');
 
+    // 12. SKILL.md Grammar Single Source
+    console.log('\n[TEST 12] SKILL.md Grammar Single Source (skill-md module)...');
+    const tricky = '---\r\nname: "Tricky Skill"\r\ndescription: >-\r\n  Use this skill when the user asks\r\n  about multiline descriptions.\r\n---\r\n\r\n# Body here\r\n';
+    const parsedTricky = parseFrontmatter(tricky, 'fallback-name');
+    assert(parsedTricky.hasValidFrontmatter === true, 'CRLF frontmatter detected');
+    assert(parsedTricky.name === 'Tricky Skill', `Quoted name unquoted: ${parsedTricky.name}`);
+    assert(parsedTricky.description.includes('multiline descriptions'), 'Folded multiline description joined');
+    assert(parsedTricky.body === '# Body here', 'Body separated from frontmatter');
+
+    const noFm = parseFrontmatter('just text, no frontmatter', 'fallback-name');
+    assert(noFm.hasValidFrontmatter === false && noFm.name === 'fallback-name', 'Missing frontmatter falls back to provided name');
+
+    assert(sanitizeName('My Great Skill!') === 'my-great-skill-', `sanitizeName grammar: ${sanitizeName('My Great Skill!')}`);
+    assert(isNameCompliant(sanitizeName('My Great Skill!')) === true, 'Sanitized name passes the compliant check');
+    assert(isNameCompliant('Bad Name') === false, 'Non-compliant name detected');
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('        ALL 11 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 12 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

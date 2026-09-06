@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const config = require('./config');
 const { getOverrides } = require('./overrides');
 const { pathExists } = require('./fs-utils');
+const { parseFrontmatter } = require('./skill-md');
 
 /**
  * Parses YAML frontmatter and body from SKILL.md
@@ -15,25 +16,8 @@ async function parseSkillFile(skillDir) {
 
   try {
     const rawContent = await fsp.readFile(skillMdPath, 'utf8');
-    const match = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---([\s\S]*)$/);
-
-    let name = path.basename(skillDir);
-    let description = '';
-    let frontmatterRaw = '';
-    let body = rawContent;
-    let hasValidFrontmatter = false;
-
-    if (match) {
-      hasValidFrontmatter = true;
-      frontmatterRaw = match[1];
-      body = match[2].trim();
-
-      const nameMatch = frontmatterRaw.match(/^name:\s*(.+)$/m);
-      const descMatch = frontmatterRaw.match(/^description:\s*(?:>-\s*)?([\s\S]*?)(?=\n[a-z_]+:|$)/m);
-
-      if (nameMatch) name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
-      if (descMatch) description = descMatch[1].replace(/\r?\n\s*/g, ' ').trim().replace(/^["']|["']$/g, '');
-    }
+    const { name, description, hasValidFrontmatter, frontmatterRaw, body } =
+      parseFrontmatter(rawContent, path.basename(skillDir));
 
     return {
       name,
