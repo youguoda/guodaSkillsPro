@@ -727,6 +727,7 @@ async function openGuideModal(skillId) {
 
   document.getElementById('guide-markdown').innerHTML = '<p class="text-slate-500 text-center py-6">正在加载 SKILL.md ...</p>';
   document.getElementById('guide-files').innerHTML = '<li class="text-slate-500 italic">加载中...</li>';
+  ['guide-ai-output', 'guide-ai-error', 'guide-ai-setup', 'guide-ai-refresh', 'guide-ai-badge'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('modal-guide').classList.remove('hidden');
 
   // Record the view usage (fire-and-forget; keep displayed value until refresh)
@@ -899,6 +900,95 @@ async function installSkillToTargetFromGuide() {
 function closeGuideModal() {
   document.getElementById('modal-guide').classList.add('hidden');
   guideSkillId = null;
+}
+
+// ---------------------------------------------------------------------
+// AI Guide (🤖 AI 讲解) — LLM reads the SKILL.md and explains it
+// ---------------------------------------------------------------------
+async function explainCurrentSkill(force) {
+  if (!guideSkillId) return;
+  const btn = document.getElementById('guide-ai-btn');
+  const output = document.getElementById('guide-ai-output');
+  const errBox = document.getElementById('guide-ai-error');
+  const badge = document.getElementById('guide-ai-badge');
+  btn.disabled = true;
+  btn.textContent = '🤖 正在阅读技能文件...';
+  errBox.classList.add('hidden');
+  output.classList.add('hidden');
+  badge.classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/explain-skill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId: guideSkillId, force: !!force })
+    });
+    const data = await res.json();
+
+    if (res.status === 503 || res.status === 502 || res.status === 504) {
+      // Unconfigured, or the configured gateway rejected the key — offer the setup form
+      showAiSetupForm();
+      errBox.textContent = data.error || `请求失败 (${res.status})`;
+      errBox.classList.remove('hidden');
+      return;
+    }
+    if (!data.success) {
+      errBox.textContent = data.error || `请求失败 (${res.status})`;
+      errBox.classList.remove('hidden');
+      return;
+    }
+
+    output.innerHTML = marked.parse(data.explanation.text || '');
+    output.classList.remove('hidden');
+    badge.textContent = `${data.explanation.model}${data.explanation.cached ? ' · 缓存' : ''}`;
+    badge.classList.remove('hidden');
+    document.getElementById('guide-ai-refresh').classList.remove('hidden');
+    if (data.usage) updateGuideUsageStat(data.usage);
+  } catch (err) {
+    errBox.textContent = `讲解出错: ${err.message}`;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 让 AI 讲解这个技能';
+  }
+}
+
+async function showAiSetupForm() {
+  const box = document.getElementById('guide-ai-setup');
+  try {
+    const res = await fetch('/api/llm-config');
+    const cfg = await res.json();
+    document.getElementById('ai-setup-url').value = cfg.baseUrl || 'https://open.bigmodel.cn/api/paas/v4';
+    document.getElementById('ai-setup-model').value = cfg.model || 'glm-4-flash';
+  } catch (e) { /* defaults stay as placeholders */ }
+  box.classList.remove('hidden');
+}
+
+async function saveAiSetup() {
+  const baseUrl = document.getElementById('ai-setup-url').value.trim();
+  const model = document.getElementById('ai-setup-model').value.trim();
+  const apiKey = document.getElementById('ai-setup-key').value.trim();
+  if (!baseUrl || !model || !apiKey) {
+    alert('Base URL、模型名和 API Key 都需要填写');
+    return;
+  }
+  try {
+    const res = await fetch('/api/llm-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl, model, apiKey })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('AI 服务配置已保存', 'success');
+      document.getElementById('guide-ai-setup').classList.add('hidden');
+      await explainCurrentSkill(true);
+    } else {
+      showToast(`保存失败: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`保存出错: ${err.message}`, 'error');
+  }
 }
 
 // ---------------------------------------------------------------------

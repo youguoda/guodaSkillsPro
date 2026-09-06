@@ -11,6 +11,7 @@ const { setOverride, deleteOverride, getOverrides } = require('./server/override
 const { parseFrontmatter, sanitizeName, isNameCompliant } = require('./server/skill-md');
 const { recordUsage, setFavorite, resetUsage } = require('./server/usage');
 const { installSkillToTarget } = require('./server/deploy');
+const { buildExplainPrompt, explainSkill, forgetExplanation, saveLlmConfig, clearLlmConfig, getSettings } = require('./server/llm');
 
 console.log('================================================================');
 console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
@@ -391,9 +392,50 @@ async function runTests() {
       console.log('  [CLEANUP] Reset probe usage entries');
     }
 
+    // 16. AI Guide: prompt builder, explanation cache, llm-config API
+    console.log('\n[TEST 16] AI Guide (prompt / cache / config API)...');
+    let settingsBackup = null;
+    const settingsFile = path.join(__dirname, 'server', 'data', 'llm-settings.json');
+    try {
+      const prompt = buildExplainPrompt('---\nname: demo\n---\n# Demo body', 'demo');
+      assert(prompt.includes('# Demo body'), 'Prompt carries the SKILL.md content');
+      assert(prompt.includes('## 这是什么') && prompt.includes('## 怎么用') && prompt.includes('## 举个例子'), 'Prompt enforces the three required sections');
+
+      // Snapshot user settings so the config roundtrip below cannot clobber them
+      if (fs.existsSync(settingsFile)) settingsBackup = fs.readFileSync(settingsFile, 'utf8');
+
+      let chatCalls = 0;
+      const fakeChat = async () => { chatCalls += 1; return '## 这是什么\n测试讲解'; };
+      const subject = { id: '__explain_probe__', dirHash: 'aaa', content: 'body', name: 'probe' };
+      const first = await explainSkill(subject, { chatFn: fakeChat });
+      assert(first.cached === false && first.text.includes('测试讲解'), 'explainSkill generates on first call');
+      const second = await explainSkill(subject, { chatFn: fakeChat });
+      assert(second.cached === true && chatCalls === 1, 'Second call served from cache (no extra LLM call)');
+      const forced = await explainSkill(subject, { chatFn: fakeChat, force: true });
+      assert(forced.cached === false && chatCalls === 2, 'force:true bypasses the cache');
+      const other = await explainSkill({ ...subject, dirHash: 'bbb' }, { chatFn: fakeChat });
+      assert(other.cached === false, 'Changed dirHash produces a fresh cache entry');
+
+      const cfgRes = await checkEndpoint('/api/llm-config');
+      assert(cfgRes.statusCode === 200 && typeof cfgRes.json.configured === 'boolean', 'GET /api/llm-config reports configured flag');
+      assert(cfgRes.json.apiKey === undefined, 'llm-config never leaks the API key');
+
+      await checkEndpoint('/api/llm-config', 'POST', { baseUrl: 'https://example.com/v4', apiKey: 'probe-key', model: 'probe-model' });
+      const cfgAfter = await checkEndpoint('/api/llm-config');
+      assert(cfgAfter.json.configured === true && cfgAfter.json.source === 'settings', 'Saved settings become the active provider');
+
+      const explainUnknown = await checkEndpoint('/api/explain-skill', 'POST', { skillId: '__nope__' });
+      assert(explainUnknown.statusCode === 404, `explain unknown skill -> ${explainUnknown.statusCode}`);
+    } finally {
+      clearLlmConfig();
+      if (settingsBackup !== null) fs.writeFileSync(settingsFile, settingsBackup, 'utf8');
+      forgetExplanation('__explain_probe__');
+      console.log('  [CLEANUP] Restored llm settings snapshot and removed probe explanations');
+    }
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('        ALL 15 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 16 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

@@ -12,6 +12,7 @@ const { HttpError, assertContainedSkillPath } = require('./guard');
 const { TIERS, SYNC_STATUSES, tierLabel, tierIcon } = require('./vocab');
 const { recordUsage, setFavorite, mergeUsage } = require('./usage');
 const { installSkillToTarget } = require('./deploy');
+const { getLlmConfig, saveLlmConfig, clearLlmConfig, explainSkill } = require('./llm');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -416,6 +417,68 @@ router.post('/install-skill', async (req, res) => {
     recordUsage(skillId, 'install');
     invalidateInventory();
     res.json({ success: true, result });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+/**
+ * AI guide: current LLM configuration (never returns the API key itself)
+ */
+router.get('/llm-config', (req, res) => {
+  const cfg = getLlmConfig();
+  res.json({
+    success: true,
+    configured: !!cfg.provider,
+    provider: cfg.provider,
+    baseUrl: cfg.baseUrl || '',
+    model: cfg.model || '',
+    source: cfg.source
+  });
+});
+
+/**
+ * AI guide: save or reset the LLM configuration (OpenAI-compatible endpoint)
+ */
+router.post('/llm-config', (req, res) => {
+  const { baseUrl, apiKey, model, reset } = req.body || {};
+  try {
+    if (reset) {
+      clearLlmConfig();
+      return res.json({ success: true, reset: true });
+    }
+    const entry = saveLlmConfig({ baseUrl, apiKey, model });
+    res.json({ success: true, configured: true, baseUrl: entry.baseUrl, model: entry.model });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+/**
+ * AI guide: let the configured LLM read a skill and explain how to use it
+ */
+router.post('/explain-skill', async (req, res) => {
+  const { skillId, force } = req.body || {};
+  if (!skillId) {
+    return res.status(400).json({ success: false, error: 'skillId is required' });
+  }
+
+  try {
+    const { skill, instance } = resolveSkill(await getInventory(), skillId);
+    if (!skill || !instance) throw new HttpError(404, `Unknown skill: ${skillId}`);
+
+    const parsed = await parseSkillFile(instance.path);
+    if (!parsed) throw new HttpError(404, 'SKILL.md not found for this skill');
+
+    const explanation = await explainSkill({
+      id: skill.id,
+      dirHash: instance.dirHash,
+      content: parsed.rawContent,
+      name: skill.name
+    }, { force: !!force });
+
+    const usage = recordUsage(skill.id, 'ai_explain');
+    res.json({ success: true, explanation, usage });
   } catch (err) {
     sendError(res, err);
   }
