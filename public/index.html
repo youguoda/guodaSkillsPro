@@ -156,34 +156,16 @@
 
       <!-- Filter Tabs -->
       <div class="flex flex-wrap items-center gap-2 text-xs">
-        <!-- Agent Filter Dropdown/Tabs -->
+        <!-- Agent Filter Dropdown (rendered from the /api/skills meta contract) -->
         <select id="agent-filter-select" onchange="setAgentFilter(this.value)" class="bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="all">全部 Agent 技能</option>
-          <option value="hermes">Hermes Agent (Win + WSL)</option>
-          <option value="openclaw">OpenClaw (Win + WSL)</option>
-          <option value="claude">Claude Code (Win + WSL)</option>
-          <option value="cursor">Cursor (Win + WSL)</option>
-          <option value="codex">Codex System (WSL)</option>
-          <option value="zcode">ZCode (WSL)</option>
-          <option value="agents">Generic Agents (.agents)</option>
         </select>
 
-        <!-- Tier Filter Buttons -->
-        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="tier-filters">
-          <button onclick="setTierFilter('all')" data-tier="all" class="filter-tier-btn px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-medium transition">全部</button>
-          <button onclick="setTierFilter('builtin')" data-tier="builtin" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">官方内置</button>
-          <button onclick="setTierFilter('downloaded')" data-tier="downloaded" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">网上下载</button>
-          <button onclick="setTierFilter('custom')" data-tier="custom" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">自编技能</button>
-        </div>
+        <!-- Tier Filter Buttons (rendered from meta) -->
+        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="tier-filters"></div>
 
-        <!-- Sync Filter Buttons -->
-        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="sync-filters">
-          <button onclick="setSyncFilter('all')" data-sync="all" class="filter-sync-btn px-2.5 py-1 rounded-lg bg-slate-800 text-white font-medium transition">所有状态</button>
-          <button onclick="setSyncFilter('synced')" data-sync="synced" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">双端对齐</button>
-          <button onclick="setSyncFilter('windows_only')" data-sync="windows_only" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">仅Win</button>
-          <button onclick="setSyncFilter('wsl_only')" data-sync="wsl_only" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">仅WSL</button>
-          <button onclick="setSyncFilter('diff')" data-sync="diff" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">内容差异</button>
-        </div>
+        <!-- Sync Filter Buttons (rendered from meta) -->
+        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" id="sync-filters"></div>
       </div>
     </div>
 
@@ -324,8 +306,7 @@
         <div>
           <label class="block text-slate-300 font-medium mb-1">目标 Agent 目录</label>
           <select id="new-skill-env" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none">
-            <option value="windows">Windows: Claude Code (~/.claude/skills)</option>
-            <option value="wsl">WSL: Cursor (~/.cursor/skills-cursor)</option>
+            <option value="windows">加载中...</option>
           </select>
         </div>
       </div>

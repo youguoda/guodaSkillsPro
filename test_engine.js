@@ -240,11 +240,9 @@ async function runTests() {
     const editorEvil = await checkEndpoint('/api/open-editor', 'POST', { path: evilPath });
     assert(editorEvil.statusCode === 403, `open-editor outside roots rejected (${editorEvil.statusCode})`);
 
-    const syncEvil = await checkEndpoint('/api/sync', 'POST', {
-      direction: 'to_wsl',
-      skill: { name: 'evil', instances: { windows: [{ path: evilPath }], wsl: [] } }
-    });
-    assert(syncEvil.statusCode === 403, `sync with outside source rejected (${syncEvil.statusCode})`);
+    // /sync takes a skillId only — client-supplied paths are no longer part of the contract
+    const syncMissing = await checkEndpoint('/api/sync', 'POST', { direction: 'to_wsl', skill: { instances: { windows: [{ path: evilPath }] } } });
+    assert(syncMissing.statusCode === 400, `sync without skillId rejected (${syncMissing.statusCode})`);
 
     const badTier = await checkEndpoint('/api/set-override', 'POST', { skillId: '__tier_probe__', tier: 'hacker' });
     assert(badTier.statusCode === 400, `invalid tier rejected (${badTier.statusCode})`);
@@ -272,9 +270,31 @@ async function runTests() {
     assert(isNameCompliant(sanitizeName('My Great Skill!')) === true, 'Sanitized name passes the compliant check');
     assert(isNameCompliant('Bad Name') === false, 'Non-compliant name detected');
 
+    // 13. Vocabulary Contract & Id-Based Routes
+    console.log('\n[TEST 13] Vocabulary Contract & Id-Based Routes...');
+    const skillsPayload = skillsApiRes.json;
+    assert(Array.isArray(skillsPayload.meta && skillsPayload.meta.tiers) && skillsPayload.meta.tiers.length === 3, 'meta.tiers vocabulary delivered');
+    assert(skillsPayload.meta.tiers.every(t => ['builtin', 'downloaded', 'custom'].includes(t.id)), 'tier ids match the guard whitelist');
+    assert(Array.isArray(skillsPayload.meta.syncStatuses) && skillsPayload.meta.syncStatuses.length >= 5, 'meta.syncStatuses vocabulary delivered');
+    assert(typeof skillsPayload.meta.tierLabel === 'undefined', 'meta is pure JSON (no functions serialized)');
+
+    const syncUnknown = await checkEndpoint('/api/sync', 'POST', { skillId: '__nope__', direction: 'to_wsl' });
+    assert(syncUnknown.statusCode === 404, `sync unknown id -> ${syncUnknown.statusCode}`);
+
+    const diffUnknown = await checkEndpoint('/api/diff', 'POST', { skillId: '__nope__' });
+    assert(diffUnknown.statusCode === 404, `diff unknown id -> ${diffUnknown.statusCode}`);
+
+    const updUnknown = await checkEndpoint('/api/check-update', 'POST', { skillId: '__nope__' });
+    assert(updUnknown.statusCode === 404, `check-update unknown id -> ${updUnknown.statusCode}`);
+
+    const noUpstreamSkill = skillsPayload.skills.find(s => !s.upstream);
+    assert(!!noUpstreamSkill, 'found a skill without upstream for the 400 probe');
+    const updNoUpstream = await checkEndpoint('/api/check-update', 'POST', { skillId: noUpstreamSkill.id });
+    assert(updNoUpstream.statusCode === 400, `check-update without upstream -> ${updNoUpstream.statusCode}`);
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('        ALL 12 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 13 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

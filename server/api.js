@@ -6,9 +6,10 @@ const path = require('path');
 const config = require('./config');
 const { scanAllSkills, parseSkillFile, getInventory, invalidateInventory, resolveSkill } = require('./scanner');
 const { pathExists } = require('./fs-utils');
-const { syncSkill, syncDirectory } = require('./sync');
+const { syncDirectory, syncSkillByEnv } = require('./sync');
 const { getOverrides, setOverride, deleteOverride } = require('./overrides');
 const { HttpError, assertContainedSkillPath } = require('./guard');
+const { TIERS, SYNC_STATUSES, tierLabel, tierIcon } = require('./vocab');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -67,7 +68,15 @@ router.get('/skills', async (req, res) => {
       downloaded: skills.filter(s => s.tier === 'downloaded').length,
       custom: skills.filter(s => s.tier === 'custom').length
     };
-    res.json({ success: true, stats, targets, skills });
+    const meta = {
+      tiers: TIERS,
+      syncStatuses: SYNC_STATUSES,
+      customSkillEnvs: [
+        { id: 'windows', label: `Windows: ${path.basename(config.defaultCustomDir.windows)}  (${config.defaultCustomDir.windows})` },
+        { id: 'wsl', label: `WSL: Cursor skills  (${config.defaultCustomDir.wsl})` }
+      ]
+    };
+    res.json({ success: true, stats, targets, meta, skills });
   } catch (err) {
     sendError(res, err);
   }
@@ -157,36 +166,22 @@ router.post('/save-skill', async (req, res) => {
 });
 
 /**
- * Sync single skill between Windows and WSL
+ * Sync single skill between Windows and WSL (by skillId — no client paths)
  */
 router.post('/sync', async (req, res) => {
-  const { skill, direction } = req.body;
-  if (!skill || !direction) {
-    return res.status(400).json({ success: false, error: 'Missing skill or direction' });
+  const { skillId, direction } = req.body;
+  if (!skillId || !direction) {
+    return res.status(400).json({ success: false, error: 'Missing skillId or direction' });
   }
   if (direction !== 'to_wsl' && direction !== 'to_windows') {
     return res.status(400).json({ success: false, error: `Invalid direction: ${direction}` });
   }
 
-  // Every host path riding on the request body must be inside a skill target
   try {
-    const payloadPaths = [];
-    for (const env of ['windows', 'wsl']) {
-      const first = skill.instances && skill.instances[env] && skill.instances[env][0];
-      if (first && first.path) payloadPaths.push(first.path);
-    }
-    if (payloadPaths.length === 0) {
-      throw new HttpError(400, 'Skill payload carries no instance path to sync from');
-    }
-    for (const p of payloadPaths) {
-      await assertContainedSkillPath(p, 'instance path');
-    }
-  } catch (err) {
-    return sendError(res, err);
-  }
+    const { skill } = resolveSkill(await getInventory(), skillId);
+    if (!skill) throw new HttpError(404, `Unknown skill: ${skillId}`);
 
-  try {
-    const result = await syncSkill(skill, direction);
+    const result = await syncSkillByEnv(skill.instances, skill.name, direction);
     invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
@@ -243,16 +238,22 @@ router.post('/scaffold', (req, res) => {
 });
 
 /**
- * Check upstream update for downloaded skill
+ * Check upstream update for downloaded skill (by skillId)
  */
 router.post('/check-update', async (req, res) => {
-  const { upstream } = req.body;
-  if (!upstream) {
-    return res.status(400).json({ success: false, error: 'Missing upstream metadata' });
+  const { skillId } = req.body;
+  if (!skillId) {
+    return res.status(400).json({ success: false, error: 'Missing skillId' });
   }
 
   try {
-    const result = await checkUpstreamUpdate(upstream);
+    const { skill } = resolveSkill(await getInventory(), skillId);
+    if (!skill) throw new HttpError(404, `Unknown skill: ${skillId}`);
+    if (!skill.upstream || !skill.upstream.sourceUrl) {
+      throw new HttpError(400, 'This skill has no upstream repository bound');
+    }
+
+    const result = await checkUpstreamUpdate(skill.upstream);
     res.json(result);
   } catch (err) {
     sendError(res, err);
@@ -260,15 +261,21 @@ router.post('/check-update', async (req, res) => {
 });
 
 /**
- * Compare Diff between Windows and WSL instance of SKILL.md
+ * Compare Diff between Windows and WSL instance of SKILL.md (by skillId)
  */
-router.post('/diff', (req, res) => {
-  const { skill } = req.body;
-  if (!skill || !skill.instances.windows[0] || !skill.instances.wsl[0]) {
-    return res.status(400).json({ success: false, error: 'Skill must exist in both Windows and WSL to compare diff' });
+router.post('/diff', async (req, res) => {
+  const { skillId } = req.body;
+  if (!skillId) {
+    return res.status(400).json({ success: false, error: 'Missing skillId' });
   }
 
   try {
+    const { skill } = resolveSkill(await getInventory(), skillId);
+    if (!skill) throw new HttpError(404, `Unknown skill: ${skillId}`);
+    if (!skill.instances.windows[0] || !skill.instances.wsl[0]) {
+      throw new HttpError(400, 'Skill must exist in both Windows and WSL to compare diff');
+    }
+
     const winFile = path.join(skill.instances.windows[0].path, 'SKILL.md');
     const wslFile = path.join(skill.instances.wsl[0].path, 'SKILL.md');
     const diff = getSkillDiff(winFile, wslFile);

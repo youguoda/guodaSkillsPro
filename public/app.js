@@ -2,6 +2,7 @@
 let allSkills = [];
 let appStats = {};
 let appTargets = [];
+let appMeta = { tiers: [], syncStatuses: [], customSkillEnvs: [] };
 let currentTierFilter = 'all';
 let currentSyncFilter = 'all';
 let currentAgentFilter = 'all';
@@ -67,8 +68,10 @@ async function refreshSkills() {
       allSkills = data.skills;
       appStats = data.stats;
       appTargets = data.targets || [];
+      appMeta = data.meta || appMeta;
       updateStatsUI();
       renderTargetsOverview();
+      renderFilterButtons();
       renderSkillsList();
       showToast(`扫描完成，共识别 ${allSkills.length} 个 Agent 技能`, 'success');
     } else {
@@ -122,8 +125,8 @@ function renderTargetsOverview() {
           </div>
           <span class="text-xs font-bold ${t.count > 0 ? 'text-indigo-400' : 'text-slate-600'}">${t.count}</span>
         </div>
-        <div class="text-[10px] text-slate-500 font-mono truncate mt-1.5" title="${t.dir}">
-          ${t.displayBase}
+        <div class="text-[10px] text-slate-500 font-mono truncate mt-1.5" title="${escapeHtml(t.dir)}">
+          ${escapeHtml(t.displayBase)}
         </div>
       </div>
     `;
@@ -161,6 +164,59 @@ function setAgentFilter(agentId) {
   if (select) select.value = agentId;
   renderTargetsOverview();
   renderSkillsList();
+}
+
+// Vocabulary comes from the server's meta contract — no label duplication here
+function tierLabelOf(id) {
+  const t = (appMeta.tiers || []).find(t => t.id === id);
+  return t ? t.label : id;
+}
+
+function tierIconOf(id) {
+  const t = (appMeta.tiers || []).find(t => t.id === id);
+  return t ? t.icon : '📄';
+}
+
+// Render Tier / Sync / Agent filter controls from the meta contract
+function renderFilterButtons() {
+  const tierBox = document.getElementById('tier-filters');
+  if (tierBox && appMeta.tiers) {
+    tierBox.innerHTML =
+      `<button onclick="setTierFilter('all')" data-tier="all" class="filter-tier-btn px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-medium transition">全部</button>` +
+      appMeta.tiers.map(t =>
+        `<button onclick="setTierFilter('${t.id}')" data-tier="${t.id}" class="filter-tier-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition" title="${escapeHtml(t.hint || '')}">${t.icon} ${escapeHtml(t.label)}</button>`
+      ).join('');
+  }
+
+  const syncBox = document.getElementById('sync-filters');
+  if (syncBox && appMeta.syncStatuses) {
+    syncBox.innerHTML =
+      `<button onclick="setSyncFilter('all')" data-sync="all" class="filter-sync-btn px-2.5 py-1 rounded-lg bg-slate-800 text-white font-medium transition">所有状态</button>` +
+      appMeta.syncStatuses.map(s =>
+        `<button onclick="setSyncFilter('${s.id}')" data-sync="${s.id}" class="filter-sync-btn px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition">${escapeHtml(s.label)}</button>`
+      ).join('');
+  }
+
+  const agentSelect = document.getElementById('agent-filter-select');
+  if (agentSelect && Array.isArray(appTargets)) {
+    const groups = [];
+    appTargets.forEach(t => {
+      let g = groups.find(x => x.agentId === t.agentId);
+      if (!g) {
+        g = { agentId: t.agentId, agentName: t.agentName, envs: [] };
+        groups.push(g);
+      }
+      if (!g.envs.includes(t.env)) g.envs.push(t.env);
+    });
+    agentSelect.innerHTML = '<option value="all">全部 Agent 技能</option>' + groups.map(g =>
+      `<option value="${escapeHtml(g.agentId)}">${escapeHtml(g.agentName)} (${g.envs.map(e => (e === 'windows' ? 'Win' : 'WSL')).join(' + ')})</option>`
+    ).join('');
+    agentSelect.value = currentAgentFilter;
+  }
+
+  // Re-apply current filter highlight after re-render
+  setTierFilter(currentTierFilter);
+  setSyncFilter(currentSyncFilter);
 }
 
 // Render Skills Cards Grid
@@ -201,21 +257,27 @@ function renderSkillsList() {
   }
 
   container.innerHTML = filtered.map(skill => {
-    // Badge styles for Tier
-    const tierBadges = {
-      builtin: '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">官方内置</span>',
-      downloaded: '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">社区下载</span>',
-      custom: '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">自己编写</span>'
+    // Presentation colors stay client-side; labels/icons come from meta
+    const tierColor = {
+      builtin: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+      downloaded: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+      custom: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+    };
+    const syncDot = {
+      synced: 'bg-emerald-500', diff: 'bg-amber-500', windows_only: 'bg-blue-500',
+      wsl_only: 'bg-orange-500', unknown: 'bg-slate-500'
+    };
+    const syncText = {
+      synced: 'text-emerald-400', diff: 'text-amber-400', windows_only: 'text-blue-400',
+      wsl_only: 'text-orange-400', unknown: 'text-slate-400'
     };
 
-    // Badge styles for Sync Status
-    const syncBadges = {
-      synced: '<span class="flex items-center space-x-1 text-[10px] text-emerald-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span>双端一致</span></span>',
-      diff: '<span class="flex items-center space-x-1 text-[10px] text-amber-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span>内容差异</span></span>',
-      windows_only: '<span class="flex items-center space-x-1 text-[10px] text-blue-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span><span>仅 Win</span></span>',
-      wsl_only: '<span class="flex items-center space-x-1 text-[10px] text-orange-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span><span>仅 WSL</span></span>',
-      unknown: '<span class="flex items-center space-x-1 text-[10px] text-slate-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span><span>无法校验</span></span>'
-    };
+    const tierBadgeHtml = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold border ${tierColor[skill.tier] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}">${tierIconOf(skill.tier)} ${escapeHtml(tierLabelOf(skill.tier))}</span>`;
+
+    const syncMetaEntry = (appMeta.syncStatuses || []).find(s => s.id === skill.syncStatus);
+    const syncBadgeHtml = syncMetaEntry
+      ? `<span class="flex items-center space-x-1 text-[10px] ${syncText[skill.syncStatus] || 'text-slate-400'} font-medium"><span class="w-1.5 h-1.5 rounded-full ${syncDot[skill.syncStatus] || 'bg-slate-500'}"></span><span>${escapeHtml(syncMetaEntry.label)}</span></span>`
+      : '';
 
     // Build Agent location rows
     const agentRows = (skill.managedBy || []).map(m => {
@@ -225,8 +287,8 @@ function renderSkillsList() {
         <div class="flex items-center justify-between text-[11px] bg-slate-950/70 px-2 py-1 rounded-lg border border-slate-800/80">
           <div class="flex items-center space-x-1.5 truncate">
             <span class="px-1.5 py-0.2 rounded text-[9px] font-bold border ${badgeClass}">${isWin ? 'Win' : 'WSL'}</span>
-            <span class="text-slate-300 font-medium">${m.agentName}</span>
-            <span class="text-slate-500 font-mono truncate" title="${m.path}">${m.displayPath}</span>
+            <span class="text-slate-300 font-medium">${escapeHtml(m.agentName)}</span>
+            <span class="text-slate-500 font-mono truncate" title="${escapeHtml(m.displayPath)}">${escapeHtml(m.displayPath)}</span>
           </div>
           <button onclick="openInCursor('${skill.id}', '${m.targetId}')" class="text-[10px] text-indigo-400 hover:text-indigo-300 ml-2 flex-shrink-0 font-medium hover:underline flex items-center space-x-0.5" title="在 Cursor 中直接打开此 Agent 目录">
             <span>打开</span>
@@ -269,17 +331,17 @@ function renderSkillsList() {
         <div class="space-y-2">
           <div class="flex items-start justify-between gap-2">
             <div class="flex items-center space-x-2 truncate">
-              <span class="text-base">${skill.tier === 'builtin' ? '🔒' : skill.tier === 'downloaded' ? '📦' : '✏️'}</span>
-              <h3 class="font-bold text-sm text-white font-mono truncate" title="${skill.name}">${skill.name}</h3>
+              <span class="text-base">${tierIconOf(skill.tier)}</span>
+              <h3 class="font-bold text-sm text-white font-mono truncate" title="${escapeHtml(skill.name)}">${escapeHtml(skill.name)}</h3>
             </div>
             <div class="flex items-center space-x-1.5 flex-shrink-0">
-              ${tierBadges[skill.tier] || ''}
+              ${tierBadgeHtml}
               ${skill.isOverridden ? '<span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="该技能属性被人工指定覆盖，优先于自动探测">✋ 人工</span>' : ''}
             </div>
           </div>
 
-          <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed" title="${skill.description || '无描述'}">
-            ${skill.description || '<span class="italic text-slate-600">未提供描述</span>'}
+          <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed" title="${escapeHtml(skill.description || '无描述')}">
+            ${skill.description ? escapeHtml(skill.description) : '<span class="italic text-slate-600">未提供描述</span>'}
           </p>
 
           ${(skill.customTags && skill.customTags.length > 0) ? `
@@ -293,7 +355,7 @@ function renderSkillsList() {
         <div class="space-y-1.5 pt-1">
           <div class="flex items-center justify-between text-[10px] text-slate-500 font-medium">
             <span>Agent 归属与所在目录:</span>
-            ${syncBadges[skill.syncStatus] || ''}
+            ${syncBadgeHtml}
           </div>
           <div class="space-y-1">
             ${agentRows}
@@ -338,7 +400,7 @@ async function openInCursor(skillId, targetId = null) {
   }
 }
 
-// Sync single skill
+// Sync single skill (by id — the server resolves paths itself)
 async function syncSingleSkill(skillId, direction) {
   const skill = allSkills.find(s => s.id === skillId);
   if (!skill) return;
@@ -348,7 +410,7 @@ async function syncSingleSkill(skillId, direction) {
     const res = await fetch('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skill, direction })
+      body: JSON.stringify({ skillId, direction })
     });
     const data = await res.json();
     if (data.success) {
@@ -399,7 +461,7 @@ async function checkSkillUpdate(skillId) {
     const res = await fetch('/api/check-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ upstream: skill.upstream })
+      body: JSON.stringify({ skillId })
     });
     const data = await res.json();
     if (data.success) {
@@ -441,7 +503,7 @@ async function openDiffModal(skillId) {
     const res = await fetch('/api/diff', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skill })
+      body: JSON.stringify({ skillId })
     });
     const data = await res.json();
     if (data.success) {
@@ -494,7 +556,7 @@ async function openEditorModal(skillId, specificTargetId = null) {
   modal.classList.remove('hidden');
 
   document.getElementById('modal-skill-name').textContent = skill.name;
-  document.getElementById('modal-skill-meta').textContent = `类别: ${skill.tier === 'builtin' ? '官方内置' : skill.tier === 'downloaded' ? '社区下载' : '自定义技能'} | 涉及 ${skill.managedBy.length} 个 Agent 目录`;
+  document.getElementById('modal-skill-meta').textContent = `类别: ${tierLabelOf(skill.tier)} | 涉及 ${skill.managedBy.length} 个 Agent 目录`;
 
   // Render instance switcher chips
   const instancesList = document.getElementById('modal-instances-list');
@@ -750,6 +812,12 @@ function searchByTag(tag) {
 function openNewSkillModal() {
   document.getElementById('new-skill-name').value = '';
   document.getElementById('new-skill-desc').value = '';
+  const envSelect = document.getElementById('new-skill-env');
+  if (envSelect && appMeta.customSkillEnvs) {
+    envSelect.innerHTML = appMeta.customSkillEnvs.map(e =>
+      `<option value="${escapeHtml(e.id)}">${escapeHtml(e.label)}</option>`
+    ).join('');
+  }
   document.getElementById('modal-new-skill').classList.remove('hidden');
 }
 

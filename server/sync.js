@@ -74,33 +74,37 @@ async function syncDirectory(sourceDir, destDir) {
 }
 
 /**
- * High-level sync a skill between Windows and WSL
- * @param {Object} skill - the aggregated skill object from scanner
+ * High-level sync a skill between Windows and WSL.
+ * The "first instance per env" semantics live HERE, not in callers.
+ * @param {Object} instances - { windows: [...], wsl: [...] } from the scanner aggregate
+ * @param {string} name - skill display name (for errors)
  * @param {string} direction - 'to_wsl' | 'to_windows'
  */
-async function syncSkill(skill, direction) {
+async function syncSkillByEnv(instances, name, direction) {
+  const list = instances || {};
+
   if (direction === 'to_wsl') {
-    if (!skill.instances.windows || skill.instances.windows.length === 0) {
-      throw new Error(`Skill "${skill.name}" has no Windows instance to sync from.`);
+    if (!list.windows || list.windows.length === 0) {
+      throw new Error(`Skill "${name}" has no Windows instance to sync from.`);
     }
-    const sourcePath = skill.instances.windows[0].path;
+    const sourcePath = list.windows[0].path;
     // Determine target directory in WSL
     let targetDir;
-    if (skill.instances.wsl && skill.instances.wsl.length > 0) {
-      targetDir = skill.instances.wsl[0].path;
+    if (list.wsl && list.wsl.length > 0) {
+      targetDir = list.wsl[0].path;
     } else {
       // Default to WSL cursor skills directory
       targetDir = path.join(config.defaultCustomDir.wsl, path.basename(sourcePath));
     }
     return syncDirectory(sourcePath, targetDir);
   } else if (direction === 'to_windows') {
-    if (!skill.instances.wsl || skill.instances.wsl.length === 0) {
-      throw new Error(`Skill "${skill.name}" has no WSL instance to sync from.`);
+    if (!list.wsl || list.wsl.length === 0) {
+      throw new Error(`Skill "${name}" has no WSL instance to sync from.`);
     }
-    const sourcePath = skill.instances.wsl[0].path;
+    const sourcePath = list.wsl[0].path;
     let targetDir;
-    if (skill.instances.windows && skill.instances.windows.length > 0) {
-      targetDir = skill.instances.windows[0].path;
+    if (list.windows && list.windows.length > 0) {
+      targetDir = list.windows[0].path;
     } else {
       targetDir = path.join(config.defaultCustomDir.windows, path.basename(sourcePath));
     }
@@ -112,5 +116,5 @@ async function syncSkill(skill, direction) {
 
 module.exports = {
   syncDirectory,
-  syncSkill
+  syncSkillByEnv
 };
