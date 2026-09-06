@@ -5,6 +5,7 @@ const path = require('path');
 const config = require('./config');
 const { scanAllSkills, parseSkillFile } = require('./scanner');
 const { syncSkill, syncDirectory } = require('./sync');
+const { getOverrides, setOverride, deleteOverride } = require('./overrides');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -266,4 +267,46 @@ router.post('/open-editor', (req, res) => {
   }
 });
 
+/**
+ * Get all manual user overrides
+ */
+router.get('/overrides', (req, res) => {
+  res.json({ success: true, overrides: getOverrides() });
+});
+
+/**
+ * Set manual user override for a skill (tier, upstreamUrl, notes)
+ */
+router.post('/set-override', (req, res) => {
+  const { skillId, tier, upstreamUrl, tags, notes } = req.body;
+  if (!skillId) {
+    return res.status(400).json({ success: false, error: 'skillId is required' });
+  }
+
+  try {
+    const result = setOverride(skillId, { tier, upstreamUrl, tags, notes });
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Reset manual user override (restore automatic detection)
+ */
+router.post('/reset-override', (req, res) => {
+  const { skillId } = req.body;
+  if (!skillId) {
+    return res.status(400).json({ success: false, error: 'skillId is required' });
+  }
+
+  try {
+    const success = deleteOverride(skillId);
+    res.json({ success, message: success ? 'Override removed' : 'No override existed' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
+

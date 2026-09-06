@@ -6,6 +6,7 @@ const { scanAllSkills, parseSkillFile, calculateDirHash } = require('./server/sc
 const { syncDirectory, syncSkill } = require('./server/sync');
 const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDiff, openInEditor } = require('./server/lifecycle');
 const { app, server } = require('./server/server');
+const { setOverride, deleteOverride } = require('./server/overrides');
 
 console.log('================================================================');
 console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
@@ -113,11 +114,13 @@ async function runTests() {
         const url = new URL(`http://localhost:${config.PORT}${endpoint}`);
         const options = {
           method,
+          agent: false,
           headers: body ? { 'Content-Type': 'application/json' } : {}
         };
         const req = http.request(url, options, (res) => {
           let data = '';
           res.on('data', chunk => data += chunk);
+          res.on('error', (e) => resolve({ statusCode: res.statusCode, raw: data, streamError: e.message }));
           res.on('end', () => {
             try {
               resolve({ statusCode: res.statusCode, json: JSON.parse(data) });
@@ -151,15 +154,56 @@ async function runTests() {
     const invalidEscapeRegex = /onclick\s*=\s*['"][^'"]*\\[^'"]*['"]/;
     assert(!invalidEscapeRegex.test(appJsContent), 'No raw unescaped backslashes in HTML onclick attributes');
 
+    // 9. Manual User Overrides (Tier / Upstream Binding / Tags / Notes)
+    console.log('\n[TEST 9] Manual Attribute Override (Tier / Upstream / Tags)...');
+    const overrideTarget = skillsApiRes.json.skills.find(s => s.tier === 'custom') || skillsApiRes.json.skills[0];
+    try {
+      const overrideRes = setOverride(overrideTarget.id, {
+        tier: 'downloaded',
+        upstreamUrl: 'https://github.com/mattpocock/skills.git',
+        tags: '图像处理, 代码审查, 工作流',
+        notes: 'manual override self-test'
+      });
+      assert(overrideRes.tier === 'downloaded', 'setOverride stored tier=downloaded');
+      assert(overrideRes.upstream && overrideRes.upstream.sourceUrl === 'https://github.com/mattpocock/skills.git', 'setOverride bound upstream sourceUrl');
+      assert(overrideRes.upstream.source === 'mattpocock/skills', `Upstream source normalized to: ${overrideRes.upstream.source}`);
+      assert(Array.isArray(overrideRes.tags) && overrideRes.tags.length === 3, `Tags normalized to 3 entries: [${overrideRes.tags.join(' / ')}]`);
+
+      const rescan = scanAllSkills();
+      const overriddenSkill = rescan.skills.find(s => s.id === overrideTarget.id);
+      assert(overriddenSkill && overriddenSkill.isOverridden === true, 'Scanner flags skill as isOverridden');
+      assert(overriddenSkill.tier === 'downloaded', `Scanner applied manual tier: ${overriddenSkill.tier}`);
+      assert(overriddenSkill.upstream && overriddenSkill.upstream.sourceUrl === 'https://github.com/mattpocock/skills.git', 'Scanner applied manual upstream binding');
+      assert(Array.isArray(overriddenSkill.customTags) && overriddenSkill.customTags.includes('代码审查'), 'Scanner applied manual tags (customTags)');
+      assert(overriddenSkill.customNotes === 'manual override self-test', 'Scanner applied manual notes');
+
+      const setApiRes = await checkEndpoint('/api/set-override', 'POST', { skillId: '__api_probe_skill__', tier: 'builtin', notes: 'probe' });
+      assert(setApiRes.statusCode === 200 && setApiRes.json.success === true, 'POST /api/set-override returned 200 OK');
+
+      const getApiRes = await checkEndpoint('/api/overrides');
+      assert(getApiRes.statusCode === 200 && getApiRes.json.overrides['__api_probe_skill__'].tier === 'builtin', 'GET /api/overrides lists persisted override');
+
+      const resetApiRes = await checkEndpoint('/api/reset-override', 'POST', { skillId: '__api_probe_skill__' });
+      assert(resetApiRes.statusCode === 200 && resetApiRes.json.success === true, 'POST /api/reset-override returned success');
+    } finally {
+      // Always restore automatic detection, even when assertions fail midway
+      deleteOverride(overrideTarget.id);
+      deleteOverride('__api_probe_skill__');
+      const restoredScan = scanAllSkills();
+      const restored = restoredScan.skills.find(s => s.id === overrideTarget.id);
+      assert(restored && restored.isOverridden === false, 'Cleanup restored automatic detection (isOverridden=false)');
+      console.log('  [CLEANUP] Removed temporary overrides from user_overrides.json');
+    }
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('         ALL 8 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('         ALL 9 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }
     console.log('================================================================');
   } catch (err) {
-    console.error('Test execution error:', err);
+    console.error('Test execution error:', err.stack || err);
     failed = true;
   } finally {
     server.close();

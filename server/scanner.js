@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
+const { getOverrides } = require('./overrides');
 
 /**
  * Parses YAML frontmatter and body from SKILL.md
@@ -256,6 +257,8 @@ function scanAllSkills() {
     group.managedBy.push(instanceInfo);
   }
 
+  const userOverrides = getOverrides();
+
   // 4. Compute status flags, agent tags, and paths
   const unifiedList = Array.from(aggregatedMap.values()).map(skill => {
     const hasWin = skill.instances.windows.length > 0;
@@ -276,8 +279,29 @@ function scanAllSkills() {
     const uniqueAgentIds = Array.from(new Set(skill.managedBy.map(m => m.agentId)));
     const uniqueAgentLabels = Array.from(new Set(skill.managedBy.map(m => `${m.agentName} (${m.env === 'windows' ? 'Win' : 'WSL'})`)));
 
+    // Apply manual user overrides if present
+    const override = userOverrides[skill.id];
+    let finalTier = skill.tier;
+    let finalUpstream = skill.upstream;
+    let isOverridden = false;
+    let customTags = [];
+    let customNotes = '';
+
+    if (override) {
+      isOverridden = true;
+      if (override.tier) finalTier = override.tier;
+      if (override.upstream !== undefined) finalUpstream = override.upstream;
+      if (Array.isArray(override.tags) && override.tags.length > 0) customTags = override.tags;
+      if (override.notes) customNotes = override.notes;
+    }
+
     return {
       ...skill,
+      tier: finalTier,
+      upstream: finalUpstream,
+      isOverridden,
+      customTags,
+      customNotes,
       syncStatus,
       winHash,
       wslHash,

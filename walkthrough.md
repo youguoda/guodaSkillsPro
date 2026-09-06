@@ -15,6 +15,7 @@
 | **官方内置 (Built-in)** | 识别系统级技能（如 Codex `.system`），开启只读保护；提供一键 `Fork to Custom` 派生自建能力 | [lifecycle.js](file:///h:/ProgramData/guodapro/server/lifecycle.js) |
 | **网上下载 (Downloaded)** | 关联 `.skill-lock.json`，支持用 `git ls-remote` 无损嗅探上游更新；内置行级差异对比视窗（Diff View） | [lifecycle.js](file:///h:/ProgramData/guodapro/server/lifecycle.js) |
 | **自编技能 (Custom)** | 提供标准向导生成 `SKILL.md`（YAML frontmatter）与附属目录，集成 Linter 语法与规范校验，支持一键在 Cursor 打开 | [lifecycle.js](file:///h:/ProgramData/guodapro/server/lifecycle.js) |
+| **人工类别覆盖** | 自动探测误判时，可人工调整类别（内置/下载/自编）、手动绑定上游 Git 仓库、添加标签与备注；人工指定持久化于 `user_overrides.json`，优先级高于机器判定，可随时一键恢复自动探测 | [overrides.js](file:///h:/ProgramData/guodapro/server/overrides.js) |
 
 ---
 
@@ -86,3 +87,4 @@
 2. **差异比对 (Diff)**：当两端同名技能哈希不同时，点击 `⚡ 查看 Diff`，可逐行查看 Windows 与 WSL 之间的文本修改，并选择以哪一侧为基准覆盖。
 3. **官方技能派生**：在【官方内置】分类下，点击 `🔱 Fork 派生`，一键生成属于自己的自定义版本。
 4. **新建与创作**：点击右上角【+ 新建 Skill】，填入名称与描述，自动生成规范目录骨架，并直接在网页端轻量编辑或一键点击【在 Cursor 打开】。
+5. **人工调整属性**：点击卡片上的 `⚙️ 调整属性`，可自由切换类别（官方内置 / 网上下载 / 自己编写）。对手动克隆或复制来的技能，填入上游 Git 地址保存后立即解锁【🔄 检查更新】；标签支持在搜索框中直接命中；【↺ 恢复自动判定】可随时撤销人工覆盖。

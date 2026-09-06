@@ -16,3 +16,6 @@ __poc_sync_test__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Runtime user data (manual overrides live here)
+server/data/

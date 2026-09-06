@@ -96,6 +96,12 @@ function renderTargetsOverview() {
   const container = document.getElementById('agent-targets-bar');
   if (!container) return;
 
+  const countLabel = document.getElementById('agent-targets-count');
+  if (countLabel && appTargets) {
+    const existing = appTargets.filter(t => t.exists).length;
+    countLabel.textContent = `当前共发现 ${appTargets.length} 个 Agent 专属技能目录 (${existing} 个存在)`;
+  }
+
   if (!appTargets || appTargets.length === 0) {
     container.innerHTML = '<div class="text-xs text-slate-500">未发现 Agent 专属目录</div>';
     return;
@@ -172,13 +178,14 @@ function renderSkillsList() {
     if (currentAgentFilter !== 'all') {
       if (!skill.agentIds || !skill.agentIds.includes(currentAgentFilter)) return false;
     }
-    // 4. Search query
+    // 4. Search query (name / description / agent / path / manual tags)
     if (search) {
       const matchName = skill.name.toLowerCase().includes(search);
       const matchDesc = (skill.description || '').toLowerCase().includes(search);
       const matchAgent = (skill.agentLabels || []).some(l => l.toLowerCase().includes(search));
       const matchPath = (skill.managedBy || []).some(m => m.displayPath.toLowerCase().includes(search));
-      if (!matchName && !matchDesc && !matchAgent && !matchPath) return false;
+      const matchTags = (skill.customTags || []).some(t => t.toLowerCase().includes(search));
+      if (!matchName && !matchDesc && !matchAgent && !matchPath && !matchTags) return false;
     }
     return true;
   });
@@ -249,6 +256,9 @@ function renderSkillsList() {
     // Quick open in cursor button right on card
     actionButtons += `<button onclick="openInCursor('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition font-medium">⚡ 用 Cursor 打开</button>`;
 
+    // Manual attribute override entry
+    actionButtons += `<button onclick="openOverrideModal('${skill.id}')" class="px-2.5 py-1 text-[11px] ${skill.isOverridden ? 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'} rounded-lg transition" title="人工调整类别 / 绑定上游 Git / 标签与备注">⚙️ 调整属性</button>`;
+
     // View & Edit button
     actionButtons += `<button onclick="openEditorModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">查看 / 编辑</button>`;
 
@@ -263,12 +273,19 @@ function renderSkillsList() {
             </div>
             <div class="flex items-center space-x-1.5 flex-shrink-0">
               ${tierBadges[skill.tier] || ''}
+              ${skill.isOverridden ? '<span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="该技能属性被人工指定覆盖，优先于自动探测">✋ 人工</span>' : ''}
             </div>
           </div>
 
           <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed" title="${skill.description || '无描述'}">
             ${skill.description || '<span class="italic text-slate-600">未提供描述</span>'}
           </p>
+
+          ${(skill.customTags && skill.customTags.length > 0) ? `
+          <div class="flex flex-wrap gap-1">
+            ${skill.customTags.map(t => `<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800/80 text-slate-300 border border-slate-700 cursor-pointer hover:border-indigo-500/60" onclick="searchByTag('${escapeHtml(t)}')" title="点击按标签「${escapeHtml(t)}」筛选">#${escapeHtml(t)}</span>`).join('')}
+          </div>` : ''}
+          ${skill.customNotes ? `<p class="text-[11px] text-amber-300/80 bg-amber-500/5 border border-amber-500/10 rounded-lg px-2 py-1 leading-relaxed" title="${escapeHtml(skill.customNotes)}"><span class="font-semibold">📝</span> ${escapeHtml(skill.customNotes)}</p>` : ''}
         </div>
 
         <!-- Agent Locations Section (明确展示归属哪个 Agent 目录) -->
@@ -609,6 +626,121 @@ function triggerOpenEditorFromModal() {
 
 function closeEditorModal() {
   document.getElementById('modal-editor').classList.add('hidden');
+}
+
+// ---------------------------------------------------------------------
+// Manual Attribute Override Modal (人工类别覆盖 / 上游绑定 / 标签备注)
+// ---------------------------------------------------------------------
+let overrideTargetSkillId = null;
+let overrideSelectedTier = 'custom';
+
+function openOverrideModal(skillId) {
+  const skill = allSkills.find(s => s.id === skillId);
+  if (!skill) return;
+
+  overrideTargetSkillId = skillId;
+  document.getElementById('override-skill-name').textContent = `${skill.name}  (id: ${skill.id})`;
+
+  // Prefill with the currently effective (possibly already overridden) attributes
+  selectOverrideTier(skill.tier || 'custom');
+  document.getElementById('override-upstream-input').value = (skill.upstream && skill.upstream.sourceUrl) || '';
+  document.getElementById('override-tags-input').value = (skill.customTags || []).join(', ');
+  document.getElementById('override-notes-input').value = skill.customNotes || '';
+  document.getElementById('modal-override').classList.remove('hidden');
+}
+
+function closeOverrideModal() {
+  document.getElementById('modal-override').classList.add('hidden');
+  overrideTargetSkillId = null;
+}
+
+function selectOverrideTier(tier) {
+  overrideSelectedTier = tier;
+
+  document.querySelectorAll('.override-tier-card').forEach(card => {
+    if (card.dataset.tier === tier) {
+      card.className = 'override-tier-card cursor-pointer rounded-xl border p-2.5 text-center transition border-indigo-500 bg-indigo-950/40 shadow-md shadow-indigo-900/30';
+    } else {
+      card.className = 'override-tier-card cursor-pointer rounded-xl border p-2.5 text-center transition border-slate-700 bg-slate-950 hover:border-slate-500';
+    }
+  });
+
+  // Upstream binding input only makes sense for downloaded skills
+  const upstreamBox = document.getElementById('override-upstream-box');
+  if (upstreamBox) upstreamBox.classList.toggle('hidden', tier !== 'downloaded');
+}
+
+async function saveSkillOverride() {
+  if (!overrideTargetSkillId) return;
+
+  const tier = overrideSelectedTier;
+  const upstreamUrl = document.getElementById('override-upstream-input').value.trim();
+  const tags = document.getElementById('override-tags-input').value.trim();
+  const notes = document.getElementById('override-notes-input').value.trim();
+
+  if (tier === 'downloaded' && !upstreamUrl) {
+    alert('归类为「网上下载」时必须填写上游 Git 仓库地址，否则无法检查更新。');
+    return;
+  }
+  if (upstreamUrl && !/^(https?:\/\/|git@)/.test(upstreamUrl)) {
+    alert('上游地址需以 https:// 、http:// 或 git@ 开头 (Git 仓库地址)。');
+    return;
+  }
+
+  const btn = document.getElementById('btn-save-override');
+  btn.textContent = '保存中...';
+  btn.classList.add('opacity-50', 'pointer-events-none');
+
+  try {
+    const res = await fetch('/api/set-override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId: overrideTargetSkillId, tier, upstreamUrl: upstreamUrl || null, tags, notes })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`已保存人工覆盖: ${overrideTargetSkillId} → ${tier === 'builtin' ? '官方内置' : tier === 'downloaded' ? '网上下载' : '自己编写'}`, 'success');
+      closeOverrideModal();
+      await refreshSkills();
+    } else {
+      showToast(`保存覆盖失败: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`保存覆盖出错: ${err.message}`, 'error');
+  } finally {
+    btn.textContent = '保存覆盖';
+    btn.classList.remove('opacity-50', 'pointer-events-none');
+  }
+}
+
+async function resetSkillOverride() {
+  if (!overrideTargetSkillId) return;
+
+  try {
+    const res = await fetch('/api/reset-override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId: overrideTargetSkillId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`已恢复自动判定: ${overrideTargetSkillId}`, 'success');
+      closeOverrideModal();
+      await refreshSkills();
+    } else {
+      showToast(`重置失败: ${data.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`重置出错: ${err.message}`, 'error');
+  }
+}
+
+// Quick filter by clicking a tag chip on a card
+function searchByTag(tag) {
+  const input = document.getElementById('search-input');
+  if (!input) return;
+  input.value = tag;
+  renderSkillsList();
 }
 
 // ---------------------------------------------------------------------
