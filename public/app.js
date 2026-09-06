@@ -213,7 +213,8 @@ function renderSkillsList() {
       synced: '<span class="flex items-center space-x-1 text-[10px] text-emerald-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span>双端一致</span></span>',
       diff: '<span class="flex items-center space-x-1 text-[10px] text-amber-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span>内容差异</span></span>',
       windows_only: '<span class="flex items-center space-x-1 text-[10px] text-blue-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span><span>仅 Win</span></span>',
-      wsl_only: '<span class="flex items-center space-x-1 text-[10px] text-orange-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span><span>仅 WSL</span></span>'
+      wsl_only: '<span class="flex items-center space-x-1 text-[10px] text-orange-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span><span>仅 WSL</span></span>',
+      unknown: '<span class="flex items-center space-x-1 text-[10px] text-slate-400 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span><span>无法校验</span></span>'
     };
 
     // Build Agent location rows

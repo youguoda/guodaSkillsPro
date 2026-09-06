@@ -2,7 +2,8 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const config = require('./config');
-const { calculateDirHash, pathExists } = require('./scanner');
+const { calculateDirHash } = require('./scanner');
+const { pathExists } = require('./fs-utils');
 
 /**
  * Safely copies a directory with atomic backup and hash verification

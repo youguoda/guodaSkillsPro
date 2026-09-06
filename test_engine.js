@@ -6,7 +6,7 @@ const { scanAllSkills, parseSkillFile, calculateDirHash, getInventory, invalidat
 const { syncDirectory, syncSkill } = require('./server/sync');
 const { scaffoldSkill, lintSkill, forkToCustom, checkUpstreamUpdate, getSkillDiff, openInEditor } = require('./server/lifecycle');
 const { app, server } = require('./server/server');
-const { setOverride, deleteOverride } = require('./server/overrides');
+const { setOverride, deleteOverride, getOverrides } = require('./server/overrides');
 
 console.log('================================================================');
 console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
@@ -226,9 +226,38 @@ async function runTests() {
     const inv4 = await getInventory({ force: true });
     assert(inv4 !== inv3, 'force:true bypasses the cache');
 
+    // 11. Trust Boundary Guards
+    console.log('\n[TEST 11] Trust Boundary Guards (path containment / tier whitelist / git URL)...');
+    const evilPath = 'C:\\Windows\\Temp\\__skills_evil_probe__';
+
+    const saveEvil = await checkEndpoint('/api/save-skill', 'POST', { skillPath: evilPath, content: 'x' });
+    assert(saveEvil.statusCode === 403, `save-skill outside roots rejected (${saveEvil.statusCode})`);
+
+    const detailEvil = await checkEndpoint(`/api/skill-detail?path=${encodeURIComponent(evilPath)}`);
+    assert(detailEvil.statusCode === 403, `skill-detail outside roots rejected (${detailEvil.statusCode})`);
+
+    const editorEvil = await checkEndpoint('/api/open-editor', 'POST', { path: evilPath });
+    assert(editorEvil.statusCode === 403, `open-editor outside roots rejected (${editorEvil.statusCode})`);
+
+    const syncEvil = await checkEndpoint('/api/sync', 'POST', {
+      direction: 'to_wsl',
+      skill: { name: 'evil', instances: { windows: [{ path: evilPath }], wsl: [] } }
+    });
+    assert(syncEvil.statusCode === 403, `sync with outside source rejected (${syncEvil.statusCode})`);
+
+    const badTier = await checkEndpoint('/api/set-override', 'POST', { skillId: '__tier_probe__', tier: 'hacker' });
+    assert(badTier.statusCode === 400, `invalid tier rejected (${badTier.statusCode})`);
+    assert(!getOverrides()['__tier_probe__'], 'invalid tier override was not persisted');
+
+    const badUrl = await checkUpstreamUpdate({ sourceUrl: '--upload-pack=calc.exe https://github.com/x/y' });
+    assert(badUrl.success === false, 'argv-like git URL payload rejected before reaching git');
+
+    const badScheme = await checkUpstreamUpdate({ sourceUrl: 'file:///C:/Windows/System32/config' });
+    assert(badScheme.success === false, 'file:// git URL scheme rejected');
+
     console.log('\n================================================================');
     if (!failed) {
-      console.log('        ALL 10 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
+      console.log('        ALL 11 TEST SUITES PASSED FLAWLESSLY! READY FOR USE.     ');
     } else {
       console.log('              SOME TESTS FAILED! CHECK OUTPUT ABOVE.            ');
     }

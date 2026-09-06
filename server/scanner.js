@@ -4,17 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 const { getOverrides } = require('./overrides');
-
-/** Non-blocking existence check (UNC-safe; fs.existsSync stalls the event loop on 9P shares) */
-async function pathExists(p) {
-  if (!p) return false;
-  try {
-    await fsp.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const { pathExists } = require('./fs-utils');
 
 /**
  * Parses YAML frontmatter and body from SKILL.md
@@ -74,6 +64,7 @@ async function calculateDirHash(dir) {
     try {
       entries = await fsp.readdir(currentDir, { withFileTypes: true });
     } catch (e) {
+      console.warn(`Hash walk could not read directory ${currentDir}:`, e.message);
       return;
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -104,9 +95,16 @@ async function calculateDirHash(dir) {
     )
   ));
 
+  // A hash over partially-readable content can produce a false "synced"
+  // verdict, so refuse to answer instead of lying
+  const unreadable = files.filter((f, i) => contents[i] === null);
+  if (unreadable.length > 0) {
+    throw new Error(`Unreadable files during hash: ${unreadable.slice(0, 3).map(f => f.relPath).join(', ')}`);
+  }
+
   for (let i = 0; i < files.length; i++) {
     hash.update(files[i].relPath);
-    if (contents[i] !== null) hash.update(contents[i]);
+    hash.update(contents[i]);
   }
 
   return hash.digest('hex').slice(0, 10);
@@ -184,7 +182,12 @@ async function scanAllSkills() {
         if (!parsed) continue;
 
         targetCounts[target.id] = (targetCounts[target.id] || 0) + 1;
-        const dirHash = await calculateDirHash(item.skillDir);
+        let dirHash = null;
+        try {
+          dirHash = await calculateDirHash(item.skillDir);
+        } catch (hashErr) {
+          console.warn(`Hash unavailable for ${item.skillDir}: ${hashErr.message}`);
+        }
 
         // Determine tier
         let tier = target.tier;
@@ -305,7 +308,11 @@ async function scanAllSkills() {
     } else if (!hasWin && hasWsl) {
       syncStatus = 'wsl_only';
     } else if (hasWin && hasWsl) {
-      syncStatus = (winHash === wslHash) ? 'synced' : 'diff';
+      if (winHash === null || wslHash === null) {
+        syncStatus = 'unknown';
+      } else {
+        syncStatus = (winHash === wslHash) ? 'synced' : 'diff';
+      }
     }
 
     const uniqueAgentIds = Array.from(new Set(skill.managedBy.map(m => m.agentId)));

@@ -1,9 +1,10 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const config = require('./config');
-const { calculateDirHash, pathExists } = require('./scanner');
+const { calculateDirHash } = require('./scanner');
+const { pathExists } = require('./fs-utils');
 
 /**
  * 1. BUILT-IN: Fork a built-in or system skill into user's custom directory
@@ -46,9 +47,15 @@ async function forkToCustom(sourceSkillPath, newName, targetEnv = 'windows') {
 /**
  * 2. DOWNLOADED: Check upstream remote for updates
  */
+
+// Only real Git remotes: rejecting anything else also blocks argv-injection
+// payloads that start with "-" (e.g. --upload-pack=...) before they reach git.
+const SAFE_GIT_URL = /^(https?:\/\/|git@|ssh:\/\/)\S+$/;
+
 function gitLsRemote(sourceUrl, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
-    exec(`git ls-remote ${sourceUrl} HEAD`, { timeout: timeoutMs, windowsHide: true }, (err, stdout) => {
+    // execFile with argv array: no shell, so no command interpolation
+    execFile('git', ['ls-remote', sourceUrl, 'HEAD'], { timeout: timeoutMs, windowsHide: true }, (err, stdout) => {
       if (err) reject(err);
       else resolve(stdout);
     });
@@ -60,8 +67,13 @@ async function checkUpstreamUpdate(upstream) {
     throw new Error('No upstream sourceUrl configured for this skill');
   }
 
+  const sourceUrl = String(upstream.sourceUrl).trim();
+  if (!SAFE_GIT_URL.test(sourceUrl) || sourceUrl.startsWith('-')) {
+    return { success: false, error: 'Unsupported Git URL — must start with https://, http://, ssh:// or git@' };
+  }
+
   try {
-    const output = await gitLsRemote(upstream.sourceUrl);
+    const output = await gitLsRemote(sourceUrl);
     const match = output.match(/^([a-f0-9]+)\s+/);
     if (!match) {
       return { hasUpdate: false, error: 'Could not parse remote commit' };

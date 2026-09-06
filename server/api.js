@@ -4,9 +4,11 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const config = require('./config');
-const { scanAllSkills, parseSkillFile, getInventory, invalidateInventory, resolveSkill, pathExists } = require('./scanner');
+const { scanAllSkills, parseSkillFile, getInventory, invalidateInventory, resolveSkill } = require('./scanner');
+const { pathExists } = require('./fs-utils');
 const { syncSkill, syncDirectory } = require('./sync');
 const { getOverrides, setOverride, deleteOverride } = require('./overrides');
+const { HttpError, assertContainedSkillPath } = require('./guard');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -15,6 +17,11 @@ const {
   lintSkill,
   openInEditor
 } = require('./lifecycle');
+
+/** Map guard/lifecycle errors to proper HTTP status codes */
+function sendError(res, err, fallbackStatus = 500) {
+  res.status(err.statusCode || fallbackStatus).json({ success: false, error: err.message });
+}
 
 /**
  * System metadata & environment info
@@ -31,6 +38,7 @@ router.get('/system-info', async (req, res) => {
     exists: await pathExists(t.dir)
   })));
   res.json({
+    success: true,
     winUser: config.WIN_USER_HOME,
     wslDistro: config.WSL_DISTRO,
     wslUser: config.WSL_USER,
@@ -61,7 +69,7 @@ router.get('/skills', async (req, res) => {
     };
     res.json({ success: true, stats, targets, skills });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -77,8 +85,10 @@ router.get('/skill-detail', async (req, res) => {
     skillPath = instance ? instance.path : undefined;
   }
 
-  if (!skillPath || !(await pathExists(skillPath))) {
-    return res.status(404).json({ success: false, error: 'Skill directory not found' });
+  try {
+    await assertContainedSkillPath(skillPath, 'path');
+  } catch (err) {
+    return sendError(res, err);
   }
 
   try {
@@ -110,7 +120,7 @@ router.get('/skill-detail', async (req, res) => {
       files
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -130,13 +140,19 @@ router.post('/save-skill', async (req, res) => {
   }
 
   try {
+    await assertContainedSkillPath(skillPath, 'skillPath');
+  } catch (err) {
+    return sendError(res, err);
+  }
+
+  try {
     const targetFile = path.join(skillPath, 'SKILL.md');
-    fs.writeFileSync(targetFile, content, 'utf8');
+    await fsp.writeFile(targetFile, content, 'utf8');
     const lint = lintSkill(skillPath);
     invalidateInventory();
     res.json({ success: true, lint });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -148,13 +164,33 @@ router.post('/sync', async (req, res) => {
   if (!skill || !direction) {
     return res.status(400).json({ success: false, error: 'Missing skill or direction' });
   }
+  if (direction !== 'to_wsl' && direction !== 'to_windows') {
+    return res.status(400).json({ success: false, error: `Invalid direction: ${direction}` });
+  }
+
+  // Every host path riding on the request body must be inside a skill target
+  try {
+    const payloadPaths = [];
+    for (const env of ['windows', 'wsl']) {
+      const first = skill.instances && skill.instances[env] && skill.instances[env][0];
+      if (first && first.path) payloadPaths.push(first.path);
+    }
+    if (payloadPaths.length === 0) {
+      throw new HttpError(400, 'Skill payload carries no instance path to sync from');
+    }
+    for (const p of payloadPaths) {
+      await assertContainedSkillPath(p, 'instance path');
+    }
+  } catch (err) {
+    return sendError(res, err);
+  }
 
   try {
     const result = await syncSkill(skill, direction);
     invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -174,11 +210,17 @@ router.post('/fork', async (req, res) => {
   }
 
   try {
+    await assertContainedSkillPath(sourcePath, 'sourcePath');
+  } catch (err) {
+    return sendError(res, err);
+  }
+
+  try {
     const result = await forkToCustom(sourcePath, newName, targetEnv);
     invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -196,7 +238,7 @@ router.post('/scaffold', (req, res) => {
     invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -213,7 +255,7 @@ router.post('/check-update', async (req, res) => {
     const result = await checkUpstreamUpdate(upstream);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -232,7 +274,7 @@ router.post('/diff', (req, res) => {
     const diff = getSkillDiff(winFile, wslFile);
     res.json({ success: true, diff });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -252,10 +294,16 @@ router.post('/open-editor', async (req, res) => {
   }
 
   try {
+    await assertContainedSkillPath(dirPath, 'path');
+  } catch (err) {
+    return sendError(res, err);
+  }
+
+  try {
     const result = openInEditor(dirPath, editor || 'cursor');
     res.json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -280,7 +328,7 @@ router.post('/set-override', (req, res) => {
     invalidateInventory();
     res.json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 
@@ -298,7 +346,7 @@ router.post('/reset-override', (req, res) => {
     if (success) invalidateInventory();
     res.json({ success, message: success ? 'Override removed' : 'No override existed' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendError(res, err);
   }
 });
 

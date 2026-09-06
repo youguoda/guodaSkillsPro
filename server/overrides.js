@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { HttpError, VALID_TIERS } = require('./guard');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const OVERRIDES_FILE = path.join(DATA_DIR, 'user_overrides.json');
@@ -17,7 +18,14 @@ function getOverrides() {
     const raw = fs.readFileSync(OVERRIDES_FILE, 'utf8');
     return JSON.parse(raw) || {};
   } catch (err) {
-    console.warn('Could not parse user_overrides.json:', err.message);
+    // Preserve the unreadable file instead of letting a later write destroy it
+    const quarantine = `${OVERRIDES_FILE}.corrupt.${Date.now()}`;
+    try {
+      fs.renameSync(OVERRIDES_FILE, quarantine);
+      console.error('user_overrides.json was unreadable; quarantined to', quarantine, err.message);
+    } catch (e) {
+      console.error('user_overrides.json is unreadable AND could not be quarantined:', e.message);
+    }
     return {};
   }
 }
@@ -34,12 +42,18 @@ function normalizeTags(tags) {
 }
 
 function setOverride(skillId, { tier, upstreamUrl, tags, notes }) {
-  if (!skillId) throw new Error('skillId is required');
+  if (!skillId) throw new HttpError(400, 'skillId is required');
+
+  const finalTier = tier || 'custom';
+  if (!VALID_TIERS.has(finalTier)) {
+    throw new HttpError(400, `Invalid tier "${finalTier}" (must be one of: builtin, downloaded, custom)`);
+  }
+
   const overrides = getOverrides();
   const key = skillId.toLowerCase();
 
   let upstream = null;
-  if (tier === 'downloaded' && upstreamUrl) {
+  if (finalTier === 'downloaded' && upstreamUrl) {
     upstream = {
       source: upstreamUrl.replace(/https?:\/\/github\.com\//, '').replace(/\.git$/, ''),
       sourceType: 'github',
@@ -50,7 +64,7 @@ function setOverride(skillId, { tier, upstreamUrl, tags, notes }) {
 
   overrides[key] = {
     skillId: key,
-    tier: tier || 'custom',
+    tier: finalTier,
     upstream,
     tags: normalizeTags(tags),
     notes: notes || '',
