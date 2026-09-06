@@ -156,6 +156,12 @@
 
       <!-- Filter Tabs -->
       <div class="flex flex-wrap items-center gap-2 text-xs">
+        <!-- View Mode Toggle -->
+        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button id="view-cards-btn" onclick="setViewMode('cards')" class="px-2.5 py-1 rounded-lg transition font-medium" title="卡片模式：大卡片，信息完整">▦ 卡片</button>
+          <button id="view-compact-btn" onclick="setViewMode('compact')" class="px-2.5 py-1 rounded-lg transition font-medium" title="简洁模式：按 Agent 目录分组，一屏速览">☰ 简洁</button>
+        </div>
+
         <!-- Agent Filter Dropdown (rendered from the /api/skills meta contract) -->
         <select id="agent-filter-select" onchange="setAgentFilter(this.value)" class="bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="all">全部 Agent 技能</option>

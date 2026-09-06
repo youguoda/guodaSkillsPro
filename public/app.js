@@ -6,6 +6,24 @@ let appMeta = { tiers: [], syncStatuses: [], customSkillEnvs: [] };
 let currentTierFilter = 'all';
 let currentSyncFilter = 'all';
 let currentAgentFilter = 'all';
+let currentViewMode = 'cards';
+try { currentViewMode = localStorage.getItem('skillshub-view') === 'compact' ? 'compact' : 'cards'; } catch (e) {}
+
+function setViewMode(mode) {
+  currentViewMode = mode === 'compact' ? 'compact' : 'cards';
+  try { localStorage.setItem('skillshub-view', currentViewMode); } catch (e) {}
+  renderSkillsList();
+}
+
+function updateViewToggleStyles() {
+  const cardsBtn = document.getElementById('view-cards-btn');
+  const compactBtn = document.getElementById('view-compact-btn');
+  if (!cardsBtn || !compactBtn) return;
+  const active = 'px-2.5 py-1 rounded-lg transition font-medium bg-indigo-600 text-white';
+  const idle = 'px-2.5 py-1 rounded-lg transition font-medium text-slate-400 hover:text-white';
+  cardsBtn.className = currentViewMode === 'cards' ? active : idle;
+  compactBtn.className = currentViewMode === 'compact' ? active : idle;
+}
 
 let currentActiveSkill = null;
 let currentActiveSkillId = null;
@@ -219,13 +237,11 @@ function renderFilterButtons() {
   setSyncFilter(currentSyncFilter);
 }
 
-// Render Skills Cards Grid
-function renderSkillsList() {
-  const container = document.getElementById('skills-container');
+// Shared filter pipeline for both view modes
+function filterSkills() {
   const search = (document.getElementById('search-input').value || '').toLowerCase().trim();
 
-  // Filter skills
-  const filtered = allSkills.filter(skill => {
+  return allSkills.filter(skill => {
     // 1. Tier filter
     if (currentTierFilter !== 'all' && skill.tier !== currentTierFilter) return false;
     // 2. Sync status filter
@@ -245,14 +261,35 @@ function renderSkillsList() {
     }
     return true;
   });
+}
 
-  if (filtered.length === 0) {
-    container.innerHTML = `
+// View dispatcher — both modes share the same filter pipeline
+function renderSkillsList() {
+  updateViewToggleStyles();
+  if (currentViewMode === 'compact') {
+    renderCompactList();
+  } else {
+    renderCardsView();
+  }
+}
+
+function renderEmptyState() {
+  const container = document.getElementById('skills-container');
+  container.innerHTML = `
       <div class="col-span-full py-16 text-center text-slate-500 bg-slate-900/30 border border-slate-800/60 rounded-2xl">
         <p class="text-sm">没有匹配到符合条件的技能</p>
         <button onclick="setTierFilter('all'); setSyncFilter('all'); setAgentFilter('all');" class="mt-2 text-xs text-indigo-400 hover:underline">重置所有筛选</button>
       </div>
     `;
+}
+
+// Render Skills Cards Grid (卡片模式)
+function renderCardsView() {
+  const container = document.getElementById('skills-container');
+  const filtered = filterSkills();
+
+  if (filtered.length === 0) {
+    renderEmptyState();
     return;
   }
 
@@ -379,6 +416,78 @@ function renderSkillsList() {
       </div>
     `;
   }).join('');
+}
+
+// Render Compact List (简洁模式) — skills grouped by agent target directory
+function renderCompactList() {
+  const container = document.getElementById('skills-container');
+  const skills = filterSkills();
+
+  if (skills.length === 0) {
+    renderEmptyState();
+    return;
+  }
+
+  const syncDot = {
+    synced: 'bg-emerald-500', diff: 'bg-amber-500', windows_only: 'bg-blue-500',
+    wsl_only: 'bg-orange-500', unknown: 'bg-slate-500'
+  };
+  const syncLabel = (appMeta.syncStatuses || []).reduce((acc, s) => (acc[s.id] = s.label, acc), {});
+
+  const sections = appTargets.filter(t => t.exists).map(t => {
+    const rows = skills.filter(s => (s.managedBy || []).some(m => m.targetId === t.id));
+    if (rows.length === 0) return '';
+
+    const isWin = t.env === 'windows';
+    const envBadge = isWin
+      ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300">Win</span>'
+      : '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300">WSL</span>';
+
+    const rowsHtml = rows.map(s => {
+      const dot = syncDot[s.syncStatus] || 'bg-slate-500';
+      const statusText = syncLabel[s.syncStatus] || s.syncStatus;
+      const desc = (s.description || '').slice(0, 90);
+      return `
+        <div class="group flex items-center gap-2 px-4 py-1.5 hover:bg-slate-900/70 border-b border-slate-900/80 last:border-0 text-xs">
+          <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}" title="${escapeHtml(statusText)}"></span>
+          <span class="flex-shrink-0" title="${escapeHtml(tierLabelOf(s.tier))}">${tierIconOf(s.tier)}</span>
+          <button onclick="openGuideModal('${s.id}')" class="font-mono font-semibold text-slate-200 hover:text-indigo-300 truncate max-w-[200px]" title="${escapeHtml(s.name)} — 点击打开了解与使用">${escapeHtml(s.name)}</button>
+          <span class="text-slate-500 truncate flex-1" title="${escapeHtml(s.description || '')}">${escapeHtml(desc)}</span>
+          ${(s.usage && s.usage.favorite) ? '<span class="flex-shrink-0" title="已收藏">⭐</span>' : ''}
+          ${s.isOverridden ? '<span class="flex-shrink-0 text-[10px] text-amber-400" title="属性被人工覆盖">✋</span>' : ''}
+          <span class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
+            <button onclick="openEditorModal('${s.id}', '${t.id}')" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" title="查看 / 编辑">✏️</button>
+            <button onclick="openInCursor('${s.id}', '${t.id}')" class="px-1.5 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30" title="用 Cursor 打开">⚡</button>
+          </span>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <details open class="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+        <summary class="cursor-pointer select-none px-4 py-2.5 flex items-center justify-between hover:bg-slate-900/80">
+          <div class="flex items-center space-x-2 text-xs min-w-0">
+            ${envBadge}
+            <span class="font-semibold text-slate-200 truncate">${escapeHtml(t.agentName)}</span>
+            <span class="font-mono text-[10px] text-slate-500 truncate" title="${escapeHtml(t.dir)}">${escapeHtml(t.displayBase)}</span>
+          </div>
+          <span class="text-xs font-bold text-indigo-400 flex-shrink-0 ml-2">${rows.length}</span>
+        </summary>
+        <div class="bg-slate-950/40">${rowsHtml}</div>
+      </details>
+    `;
+  }).join('');
+
+  const totalRows = appTargets.filter(t => t.exists).reduce((n, t) => n + skills.filter(s => (s.managedBy || []).some(m => m.targetId === t.id)).length, 0);
+  container.innerHTML = `
+    <div class="col-span-full space-y-3">
+      <div class="flex items-center justify-between text-[11px] text-slate-500 px-1">
+        <span>简洁模式：按 Agent 目录分组，点击分组标题可折叠</span>
+        <span class="font-mono">${skills.length} 个技能 · ${totalRows} 个分布位置</span>
+      </div>
+      ${sections}
+    </div>
+  `;
 }
 
 // ---------------------------------------------------------------------
