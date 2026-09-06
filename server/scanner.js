@@ -58,7 +58,14 @@ function calculateDirHash(dir) {
     entries.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
-      if (entry.name.startsWith('.git') || entry.name === '.sync-manifest.json') continue;
+      if (
+        entry.name.startsWith('.git') ||
+        entry.name === '.sync-manifest.json' ||
+        entry.name === 'node_modules' ||
+        entry.name === '__pycache__' ||
+        entry.name === 'venv' ||
+        entry.name === '.venv'
+      ) continue;
       const fullPath = path.join(currentDir, entry.name);
       if (entry.isDirectory()) {
         hashEntries(fullPath);
@@ -78,7 +85,37 @@ function calculateDirHash(dir) {
 }
 
 /**
- * Scans directories and returns a unified, cross-environment skills inventory with Agent folder mappings
+ * Recursively discover skill directories (supporting category subfolders like Hermes / OpenClaw)
+ */
+function discoverSkillDirectories(baseDir, maxDepth = 2, currentDepth = 0) {
+  const list = [];
+  if (!fs.existsSync(baseDir) || currentDepth > maxDepth) return list;
+
+  try {
+    const items = fs.readdirSync(baseDir, { withFileTypes: true });
+    for (const item of items) {
+      if (!item.isDirectory() || item.name.startsWith('.')) continue;
+      const fullPath = path.join(baseDir, item.name);
+
+      if (fs.existsSync(path.join(fullPath, 'SKILL.md'))) {
+        list.push({
+          dirName: item.name,
+          skillDir: fullPath
+        });
+      } else {
+        // Recurse down into categories
+        const subSkills = discoverSkillDirectories(fullPath, maxDepth, currentDepth + 1);
+        list.push(...subSkills);
+      }
+    }
+  } catch (err) {
+    console.warn(`Cannot read directory ${baseDir}:`, err.message);
+  }
+  return list;
+}
+
+/**
+ * Scans all configured agent targets and returns a unified, cross-environment skills inventory
  */
 function scanAllSkills() {
   // 1. Load lockfile(s)
@@ -109,26 +146,24 @@ function scanAllSkills() {
     if (!fs.existsSync(target.dir)) continue;
 
     try {
-      const items = fs.readdirSync(target.dir, { withFileTypes: true });
-      for (const item of items) {
-        if (!item.isDirectory() || item.name.startsWith('.')) continue;
+      const discovered = discoverSkillDirectories(target.dir, target.recursive ? 3 : 0);
 
-        const skillDir = path.join(target.dir, item.name);
-        const parsed = parseSkillFile(skillDir);
+      for (const item of discovered) {
+        const parsed = parseSkillFile(item.skillDir);
         if (!parsed) continue;
 
         targetCounts[target.id] = (targetCounts[target.id] || 0) + 1;
-        const dirHash = calculateDirHash(skillDir);
+        const dirHash = calculateDirHash(item.skillDir);
 
         // Determine tier
         let tier = target.tier;
         let upstream = null;
 
-        if (target.tier === 'builtin' || item.name.includes('.system') || target.dir.includes('.system')) {
+        if (target.tier === 'builtin' || item.skillDir.includes('.system') || item.skillDir.includes('plugins')) {
           tier = 'builtin';
         } else {
           const lockKey = parsed.name.toLowerCase();
-          const itemKey = item.name.toLowerCase();
+          const itemKey = item.dirName.toLowerCase();
           const lockData = lockfileMap.get(lockKey) || lockfileMap.get(itemKey);
 
           if (lockData) {
@@ -149,14 +184,15 @@ function scanAllSkills() {
         // Subdirectories
         const subdirs = [];
         for (const sub of ['scripts', 'references', 'examples', 'resources']) {
-          if (fs.existsSync(path.join(skillDir, sub))) subdirs.push(sub);
+          if (fs.existsSync(path.join(item.skillDir, sub))) subdirs.push(sub);
         }
 
-        const displayPath = `${target.displayBase}/${item.name}`;
+        const relPath = path.relative(target.dir, item.skillDir).replace(/\\/g, '/');
+        const displayPath = `${target.displayBase}/${relPath}`;
 
         rawList.push({
           skillName: parsed.name,
-          dirName: item.name,
+          dirName: item.dirName,
           env: target.env,
           agentId: target.agentId,
           agentName: target.agentName,
@@ -164,7 +200,7 @@ function scanAllSkills() {
           targetName: target.name,
           tier,
           dirHash,
-          path: skillDir,
+          path: item.skillDir,
           displayPath,
           description: parsed.description,
           subdirs,
@@ -237,7 +273,6 @@ function scanAllSkills() {
       syncStatus = (winHash === wslHash) ? 'synced' : 'diff';
     }
 
-    // Unique Agent IDs and labels
     const uniqueAgentIds = Array.from(new Set(skill.managedBy.map(m => m.agentId)));
     const uniqueAgentLabels = Array.from(new Set(skill.managedBy.map(m => `${m.agentName} (${m.env === 'windows' ? 'Win' : 'WSL'})`)));
 

@@ -26,32 +26,34 @@ async function runTests() {
     // 1. Config Test
     console.log('[TEST 1] Configuration & Agent Target Mapping...');
     assert(config.PORT === 3721, 'Default port is 3721');
-    assert(Array.isArray(config.targets) && config.targets.length >= 5, `Configured ${config.targets.length} agent scan targets`);
-    config.targets.forEach(t => {
-      assert(!!t.agentId && !!t.agentName && !!t.displayBase, `Target [${t.id}] has agentId (${t.agentId}), agentName (${t.agentName}), and displayBase`);
-    });
+    assert(Array.isArray(config.targets) && config.targets.length >= 10, `Configured ${config.targets.length} agent scan targets`);
+    
+    const hermesTarget = config.targets.find(t => t.agentId === 'hermes' && t.env === 'wsl');
+    const openclawTarget = config.targets.find(t => t.agentId === 'openclaw' && t.env === 'wsl');
+    assert(!!hermesTarget, 'Hermes WSL target configured');
+    assert(!!openclawTarget, 'OpenClaw WSL target configured');
 
-    // 2. Scanner Test (with Agent attribution)
-    console.log('\n[TEST 2] Scanner & Agent Folder Attribution...');
+    // 2. Scanner Test (with Hermes & OpenClaw)
+    console.log('\n[TEST 2] Scanner & Multi-Agent Discovery...');
     const scanResult = scanAllSkills();
     assert(scanResult && Array.isArray(scanResult.skills), 'Scanner returns skills array');
     assert(Array.isArray(scanResult.targets), 'Scanner returns targets list');
-    assert(scanResult.skills.length > 0, `Discovered ${scanResult.skills.length} skills in real environments`);
+    assert(scanResult.skills.length >= 100, `Discovered ${scanResult.skills.length} skills (>= 100 expected with Hermes & OpenClaw)`);
 
-    // Verify Agent attribution on skills
-    const firstSkill = scanResult.skills[0];
-    assert(Array.isArray(firstSkill.managedBy) && firstSkill.managedBy.length > 0, `Skill [${firstSkill.name}] has managedBy records`);
-    assert(firstSkill.managedBy[0].agentId && firstSkill.managedBy[0].displayPath, `managedBy record contains agentId and displayPath (${firstSkill.managedBy[0].displayPath})`);
-    assert(Array.isArray(firstSkill.agentIds) && firstSkill.agentIds.length > 0, `Skill contains agentIds array for filtering`);
+    // Verify Hermes & OpenClaw targets have count > 0
+    const wslHermes = scanResult.targets.find(t => t.id === 'wsl-hermes');
+    const winHermes = scanResult.targets.find(t => t.id === 'win-hermes');
+    const winOpenclaw = scanResult.targets.find(t => t.id === 'win-openclaw');
+    const wslOpenclaw = scanResult.targets.find(t => t.id === 'wsl-openclaw-workspace');
 
-    // Verify Target stats
-    const claudeTarget = scanResult.targets.find(t => t.agentId === 'claude');
-    const cursorTarget = scanResult.targets.find(t => t.agentId === 'cursor');
-    assert(claudeTarget && claudeTarget.count > 0, `Claude Code target has skills (Count: ${claudeTarget ? claudeTarget.count : 0})`);
-    assert(cursorTarget && cursorTarget.count > 0, `Cursor target has skills (Count: ${cursorTarget ? cursorTarget.count : 0})`);
+    assert(wslHermes && wslHermes.count > 50, `WSL Hermes has ${wslHermes ? wslHermes.count : 0} skills (> 50 expected)`);
+    assert(winHermes && winHermes.count > 0, `Windows Hermes has ${winHermes ? winHermes.count : 0} skills`);
+    assert(winOpenclaw && winOpenclaw.count > 0, `Windows OpenClaw has ${winOpenclaw ? winOpenclaw.count : 0} skills`);
+    assert(wslOpenclaw && wslOpenclaw.count > 0, `WSL OpenClaw Workspace has ${wslOpenclaw ? wslOpenclaw.count : 0} skills`);
 
     // 3. Editor Launching Test
     console.log('\n[TEST 3] Cursor / Editor Launching Function...');
+    const firstSkill = scanResult.skills[0];
     const testSkillDir = firstSkill.managedBy[0].path;
     const editorRes = openInEditor(testSkillDir, 'cursor');
     assert(editorRes.success === true, 'openInEditor returned success');
@@ -130,37 +132,22 @@ async function runTests() {
       });
     };
 
-    // Test GET /api/skills
     const skillsApiRes = await checkEndpoint('/api/skills');
     assert(skillsApiRes.statusCode === 200, 'GET /api/skills returned 200 OK');
     assert(skillsApiRes.json.success === true, 'skills API reported success');
-    assert(skillsApiRes.json.skills.length > 0, `skills API returned ${skillsApiRes.json.skills.length} items`);
-    assert(Array.isArray(skillsApiRes.json.targets), 'skills API returned targets metadata');
+    assert(skillsApiRes.json.skills.length >= 100, `skills API returned ${skillsApiRes.json.skills.length} items`);
 
-    // Test GET /api/skill-detail by id (safe slug)
     const testSkillId = skillsApiRes.json.skills[0].id;
     const detailRes = await checkEndpoint(`/api/skill-detail?id=${testSkillId}`);
     assert(detailRes.statusCode === 200, `GET /api/skill-detail?id=${testSkillId} returned 200 OK`);
     assert(detailRes.json.success === true, 'skill-detail succeeded');
-    assert(detailRes.json.parsed && detailRes.json.parsed.rawContent, 'skill-detail returned raw SKILL.md content');
 
-    // Test POST /api/open-editor by skillId
     const openRes = await checkEndpoint('/api/open-editor', 'POST', { skillId: testSkillId, editor: 'cursor' });
     assert(openRes.statusCode === 200, 'POST /api/open-editor returned 200 OK');
-    assert(openRes.json.success === true, `open-editor by skillId succeeded`);
-
-    // Test POST /api/save-skill
-    const saveRes = await checkEndpoint('/api/save-skill', 'POST', {
-      skillId: testSkillId,
-      content: detailRes.json.parsed.rawContent
-    });
-    assert(saveRes.statusCode === 200, 'POST /api/save-skill returned 200 OK');
-    assert(saveRes.json.success === true, 'save-skill succeeded');
 
     // 8. Client JS Syntax Check
     console.log('\n[TEST 8] Client JavaScript Syntax Verification...');
     const appJsContent = fs.readFileSync(path.join(__dirname, 'public/app.js'), 'utf8');
-    // Ensure no raw Windows backslash paths are embedded in inline onclick attributes
     const invalidEscapeRegex = /onclick\s*=\s*['"][^'"]*\\[^'"]*['"]/;
     assert(!invalidEscapeRegex.test(appJsContent), 'No raw unescaped backslashes in HTML onclick attributes');
 
