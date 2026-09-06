@@ -93,6 +93,23 @@ async function runTests() {
       const lintRes = lintSkill(scaffolded.path);
       assert(lintRes.valid === true, 'Scaffolded skill passes Linter specification validation');
       assert(lintRes.errors.length === 0, 'No errors in compliant skill');
+      assert(lintRes.warnings.length === 0, 'Scaffolded skill (scripts/ present) has no advisories');
+
+      // Smart scripts/ advisory: only warns when SKILL.md references scripts/
+      const refSkillDir = path.join(sandboxDir, 'ref-no-dir');
+      fs.mkdirSync(refSkillDir, { recursive: true });
+      fs.writeFileSync(path.join(refSkillDir, 'SKILL.md'),
+        '---\nname: ref-no-dir\ndescription: Use this skill when testing dangling script references in linting.\n---\n# Ref\nRun `bash scripts/deploy.sh` to deploy.\n', 'utf8');
+      const lintRef = lintSkill(refSkillDir);
+      assert(lintRef.valid === true, 'Dangling script reference is an advisory, not a spec violation');
+      assert(lintRef.warnings.some(w => w.includes('scripts/deploy.sh')), 'Dangling scripts/ reference produces a precise advisory');
+
+      const pureSkillDir = path.join(sandboxDir, 'pure-knowledge');
+      fs.mkdirSync(pureSkillDir, { recursive: true });
+      fs.writeFileSync(path.join(pureSkillDir, 'SKILL.md'),
+        '---\nname: pure-knowledge\ndescription: Use this skill when testing that pure text skills stay advisory-free.\n---\n# Pure\nJust follow the workflow text, no bundled helpers needed.\n', 'utf8');
+      const lintPure = lintSkill(pureSkillDir);
+      assert(lintPure.valid === true && lintPure.warnings.length === 0, 'Pure knowledge skill without scripts/ gets no advisory');
 
       // 5. Fork Built-in Test (sandboxed)
       console.log('\n[TEST 5] Fork to Custom Test (sandbox)...');

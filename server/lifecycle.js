@@ -194,8 +194,17 @@ function lintSkill(skillDir) {
     }
   }
 
+  // scripts/ advisory: only speak up when the SKILL.md actually points into scripts/
+  // (pure knowledge/workflow skills without bundled helpers are perfectly fine)
   if (!fs.existsSync(path.join(skillDir, 'scripts'))) {
-    warnings.push('Optional scripts/ directory not found (recommended for executable helpers)');
+    const scriptRefs = Array.from(new Set(
+      (content.match(/(?:^|[\s`('"[\]>])((?:\.\/)?scripts\/[\w\-./]+)/gm) || [])
+        .map(ref => ref.trim())
+    ));
+    if (scriptRefs.length > 0) {
+      const shown = scriptRefs.slice(0, 3).join('、') + (scriptRefs.length > 3 ? ' 等' : '');
+      warnings.push(`SKILL.md 引用了 ${shown}，但技能目录下没有 scripts/ 文件夹——请补充脚本或修正引用`);
+    }
   }
 
   return {
