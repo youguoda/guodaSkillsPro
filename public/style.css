@@ -1,6 +1,65 @@
 /* SkillsHub Custom Styling */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
 
+/* ---------------------------------------------------------------------------
+   Theme tokens
+   The markup hardcodes Tailwind's dark palette (bg-slate-950, text-slate-400,
+   ...) instead of dark: variants, so light mode is implemented by remapping
+   those utilities under html.light. Selectors below are intentionally
+   `html.light .utility` (specificity 0,2,0) so they outrank Tailwind's own
+   single-class rules no matter what order the CDN injects them in.
+--------------------------------------------------------------------------- */
+:root {
+  --sh-scrollbar-track: #0f172a;
+  --sh-scrollbar-thumb: #334155;
+  --sh-scrollbar-thumb-hover: #475569;
+
+  --sh-card-shadow: rgba(0, 0, 0, 0.3);
+
+  --sh-diff-added-bg: rgba(34, 197, 94, 0.15);
+  --sh-diff-added-fg: #4ade80;
+  --sh-diff-removed-bg: rgba(239, 68, 68, 0.15);
+  --sh-diff-removed-fg: #f87171;
+  --sh-diff-gutter: #64748b;
+}
+
+html.light {
+  /* Surfaces: white cards floating on a soft blue-grey canvas keeps the
+     contrast gentle compared with pure #fff everywhere. */
+  --sh-canvas: #eef1f6;
+  --sh-surface: #ffffff;
+  --sh-raised: #e8edf4;
+  --sh-raised-hover: #dce4ee;
+  --sh-surface-hover: #f5f8fc;
+
+  --sh-border: #e2e8f0;
+  --sh-border-strong: #cfd8e3;
+  --sh-border-hover: #94a3b8;
+
+  --sh-text-strong: #0f172a;
+  --sh-text-body: #1e293b;
+  --sh-text-secondary: #334155;
+  --sh-text-muted: #4e5d70;
+  --sh-text-faint: #5a6979;
+  /* Still the faintest step, but slate-600 also carries zero-counts and the
+     "no description" note, so it has to stay legible rather than decorative. */
+  --sh-text-ghost: #7b8a9e;
+
+  --sh-scrollbar-track: #e6eaf1;
+  --sh-scrollbar-thumb: #c3ccd9;
+  --sh-scrollbar-thumb-hover: #a8b4c4;
+
+  --sh-card-shadow: rgba(15, 23, 42, 0.1);
+
+  --sh-diff-added-bg: rgba(34, 197, 94, 0.16);
+  --sh-diff-added-fg: #15803d;
+  --sh-diff-removed-bg: rgba(239, 68, 68, 0.13);
+  --sh-diff-removed-fg: #b91c1c;
+  --sh-diff-gutter: #94a3b8;
+
+  color-scheme: light;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
@@ -16,29 +75,29 @@ code, pre {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: var(--sh-scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--sh-scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--sh-scrollbar-thumb-hover);
 }
 
 /* Diff styles */
 .diff-added {
-  background-color: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background-color: var(--sh-diff-added-bg);
+  color: var(--sh-diff-added-fg);
 }
 .diff-removed {
-  background-color: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background-color: var(--sh-diff-removed-bg);
+  color: var(--sh-diff-removed-fg);
 }
 .diff-line-number {
-  color: #64748b;
+  color: var(--sh-diff-gutter);
   user-select: none;
   min-width: 40px;
   display: inline-block;
@@ -52,7 +111,7 @@ code, pre {
 }
 .skill-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 25px -5px var(--sh-card-shadow), 0 8px 10px -6px var(--sh-card-shadow);
 }
 
 /* Toast animation */
@@ -69,4 +128,118 @@ code, pre {
 
 .toast-animate {
   animation: slideIn 0.25s ease-out forwards;
+}
+
+/* ===========================================================================
+   LIGHT THEME — neutral scaffolding
+   =========================================================================== */
+
+/* Canvas / recessed panels (page background, inputs, code wells) */
+html.light .bg-slate-950 { background-color: var(--sh-canvas); }
+html.light .bg-slate-950\/40 { background-color: rgba(238, 241, 246, 0.6); }
+html.light .bg-slate-950\/60 { background-color: rgba(238, 241, 246, 0.75); }
+html.light .bg-slate-950\/70 { background-color: rgba(238, 241, 246, 0.85); }
+html.light .bg-slate-950\/80 { background-color: rgba(238, 241, 246, 0.9); }
+
+/* Cards / modals / sticky header */
+html.light .bg-slate-900 { background-color: var(--sh-surface); }
+html.light .bg-slate-900\/30 { background-color: rgba(255, 255, 255, 0.6); }
+html.light .bg-slate-900\/50 { background-color: rgba(255, 255, 255, 0.75); }
+html.light .bg-slate-900\/60 { background-color: var(--sh-surface); }
+html.light .bg-slate-900\/70 { background-color: var(--sh-surface); }
+html.light .bg-slate-900\/80 { background-color: rgba(255, 255, 255, 0.85); }
+
+/* Raised controls */
+html.light .bg-slate-800 { background-color: var(--sh-raised); }
+html.light .bg-slate-800\/80 { background-color: rgba(232, 237, 244, 0.9); }
+
+html.light .hover\:bg-slate-700:hover { background-color: var(--sh-raised-hover); }
+html.light .hover\:bg-slate-800:hover { background-color: var(--sh-raised); }
+html.light .hover\:bg-slate-900:hover { background-color: var(--sh-surface-hover); }
+html.light .hover\:bg-slate-900\/70:hover { background-color: var(--sh-surface-hover); }
+html.light .hover\:bg-slate-900\/80:hover { background-color: var(--sh-surface-hover); }
+
+/* Borders */
+html.light .border-slate-800,
+html.light .border-slate-900,
+html.light .border-slate-900\/80 { border-color: var(--sh-border); }
+html.light .border-slate-800\/60 { border-color: rgba(226, 232, 240, 0.7); }
+html.light .border-slate-800\/80 { border-color: rgba(226, 232, 240, 0.85); }
+html.light .border-slate-700 { border-color: var(--sh-border-strong); }
+html.light .border-slate-700\/60 { border-color: rgba(207, 216, 227, 0.7); }
+html.light .border-slate-700\/80 { border-color: rgba(207, 216, 227, 0.85); }
+html.light .border-slate-500\/20 { border-color: rgba(100, 116, 139, 0.25); }
+html.light .hover\:border-slate-500:hover { border-color: var(--sh-border-hover); }
+html.light .hover\:border-slate-700:hover { border-color: var(--sh-border-strong); }
+
+/* Text ramp — inverted so 400 stays more prominent than 500, as in dark mode */
+html.light .text-slate-100 { color: #182231; }
+html.light .text-slate-200 { color: var(--sh-text-body); }
+html.light .text-slate-300 { color: var(--sh-text-secondary); }
+html.light .text-slate-400 { color: var(--sh-text-muted); }
+html.light .text-slate-500 { color: var(--sh-text-faint); }
+html.light .text-slate-600 { color: var(--sh-text-ghost); }
+html.light .placeholder-slate-500::placeholder { color: var(--sh-text-ghost); }
+html.light .hover\:text-slate-200:hover { color: var(--sh-text-strong); }
+
+/* text-white is used both for headings and as the label on solid accent
+   buttons. Only the former should darken, so skip elements that carry their
+   own saturated background. */
+html.light .text-white:not([class*="bg-indigo-600"]):not([class*="bg-emerald-600"]):not([class*="bg-rose-600"]):not([class*="bg-blue-600"]):not([class*="bg-amber-600"]):not([class*="bg-violet-600"]):not([class*="bg-purple-600"]):not([class*="bg-gradient"]) {
+  color: var(--sh-text-strong);
+}
+html.light .hover\:text-white:hover { color: var(--sh-text-strong); }
+
+/* Modal scrim — full black is too harsh over a light page */
+html.light .bg-black\/75 { background-color: rgba(15, 23, 42, 0.45); }
+
+/* ===========================================================================
+   LIGHT THEME — accents
+   Solid buttons (bg-*-600) and pastel tints (bg-*-500/10) already read well on
+   white, so only the text shades tuned for glowing on dark need darkening.
+   =========================================================================== */
+html.light .text-indigo-300 { color: #4338ca; }
+html.light .text-indigo-400,
+html.light .text-indigo-500 { color: #4f46e5; }
+html.light .hover\:text-indigo-300:hover { color: #3730a3; }
+
+html.light .text-violet-200 { color: #5b21b6; }
+html.light .text-violet-300 { color: #6d28d9; }
+
+html.light .text-emerald-300 { color: #065f46; }
+html.light .text-emerald-400 { color: #047857; }
+
+html.light .text-amber-300 { color: #92400e; }
+html.light .text-amber-300\/80 { color: rgba(146, 64, 14, 0.85); }
+html.light .text-amber-400 { color: #b45309; }
+
+html.light .text-blue-300 { color: #1e40af; }
+html.light .text-blue-400 { color: #1d4ed8; }
+
+html.light .text-rose-300 { color: #9f1239; }
+html.light .text-rose-400 { color: #be123c; }
+html.light .hover\:text-rose-200:hover { color: #881337; }
+
+html.light .text-purple-300 { color: #6b21a8; }
+html.light .text-purple-400 { color: #7e22ce; }
+
+html.light .text-orange-400 { color: #c2410c; }
+
+/* Selected-state cards used near-black indigo fills */
+html.light .bg-indigo-950\/40 { background-color: rgba(99, 102, 241, 0.09); }
+html.light .bg-indigo-950\/60 { background-color: rgba(99, 102, 241, 0.14); }
+html.light .shadow-indigo-900\/30 { --tw-shadow-color: rgba(79, 70, 229, 0.18); }
+
+/* AI panel gradient: violet wash fading into the card instead of into night */
+html.light .from-violet-950\/40 {
+  --tw-gradient-from: rgba(139, 92, 246, 0.1) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(139, 92, 246, 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+html.light .to-slate-950 { --tw-gradient-to: var(--sh-surface) var(--tw-gradient-to-position); }
+
+/* Ease the switch so toggling does not flash */
+html.light body,
+html.dark body {
+  transition: background-color 0.2s ease, color 0.2s ease;
 }

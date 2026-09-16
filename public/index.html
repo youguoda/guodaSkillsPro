@@ -28,6 +28,16 @@
   <!-- Marked.js for Markdown Preview -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Applied before first paint so reloading in light mode does not flash dark.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('skillshub-theme'); } catch (e) {}
+      var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.classList.toggle('light', theme === 'light');
+      document.documentElement.classList.toggle('dark', theme !== 'light');
+    })();
+  </script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -61,6 +71,10 @@
             <span class="text-slate-300" id="env-wsl-distro">WSL (Ubuntu)</span>
           </div>
         </div>
+
+        <button onclick="toggleTheme()" id="btn-theme" title="切换浅色 / 深色主题" class="flex items-center justify-center w-8 h-8 text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition">
+          <span id="btn-theme-icon" class="text-sm leading-none">🌙</span>
+        </button>
 
         <button onclick="refreshSkills()" id="btn-refresh" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>

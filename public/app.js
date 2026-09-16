@@ -29,8 +29,28 @@ let currentActiveSkill = null;
 let currentActiveSkillId = null;
 let currentActiveInstance = null;
 
+// Theme (the class itself is applied by the inline script in index.html so the
+// first paint already matches; here we only handle toggling and the icon)
+function currentTheme() {
+  return document.documentElement.classList.contains('light') ? 'light' : 'dark';
+}
+
+function applyTheme(theme) {
+  const light = theme === 'light';
+  document.documentElement.classList.toggle('light', light);
+  document.documentElement.classList.toggle('dark', !light);
+  try { localStorage.setItem('skillshub-theme', light ? 'light' : 'dark'); } catch (e) {}
+  const icon = document.getElementById('btn-theme-icon');
+  if (icon) icon.textContent = light ? '☀️' : '🌙';
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme() === 'light' ? 'dark' : 'light');
+}
+
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(currentTheme());
   loadSystemInfo();
   refreshSkills();
 });
@@ -680,7 +700,7 @@ async function openEditorModal(skillId, specificTargetId = null) {
   instancesList.innerHTML = skill.managedBy.map(m => {
     const isSelected = m.targetId === activeInstance.targetId;
     return `
-      <button onclick="switchModalInstance('${skill.id}', '${m.targetId}')" class="px-2.5 py-1 rounded-lg border font-mono text-[11px] transition flex items-center space-x-1.5 ${isSelected ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900 text-slate-400 border-slate-750 hover:text-slate-200'}">
+      <button onclick="switchModalInstance('${skill.id}', '${m.targetId}')" class="px-2.5 py-1 rounded-lg border font-mono text-[11px] transition flex items-center space-x-1.5 ${isSelected ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'}">
         <span>${m.env === 'windows' ? '🪟 Win' : '🐧 WSL'}: ${m.agentName}</span>
       </button>
     `;
