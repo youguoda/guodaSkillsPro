@@ -1,17 +1,45 @@
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 const WIN_USER_HOME = process.env.USERPROFILE || 'C:/Users/14393';
-const WSL_DISTRO = process.env.WSL_DISTRO || 'Ubuntu-22.04';
-const WSL_USER = process.env.WSL_USER || 'guoda';
-const WSL_HOME_UNC = `//wsl.localhost/${WSL_DISTRO}/home/${WSL_USER}`;
+
+// Ask the default WSL distro for its own name and home directory. Hardcoding
+// these silently produces a valid-looking UNC path that matches nothing, so
+// every WSL target scans as empty instead of erroring.
+function probeWsl() {
+  try {
+    const out = execSync('wsl -e sh -c "echo $WSL_DISTRO_NAME; echo $HOME"', {
+      env: { ...process.env, WSL_UTF8: '1' },
+      encoding: 'utf8',
+      timeout: 15000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    const [distro, home] = out.split('\n').map(s => s.trim());
+    if (distro && home) return { distro, home };
+  } catch (e) {
+    console.warn(`[config] WSL probe failed (${e.message}). Falling back to defaults.`);
+  }
+  return null;
+}
+
+const probed = probeWsl();
+const WSL_DISTRO = process.env.WSL_DISTRO || (probed && probed.distro) || 'Ubuntu';
+const WSL_HOME = process.env.WSL_HOME || (probed && probed.home) || `/home/${os.userInfo().username}`;
+const WSL_USER = process.env.WSL_USER || path.basename(WSL_HOME);
+const WSL_HOME_UNC = `//wsl.localhost/${WSL_DISTRO}${WSL_HOME}`;
+
+if (!fs.existsSync(WSL_HOME_UNC)) {
+  console.warn(`[config] WSL home not reachable at ${WSL_HOME_UNC} - WSL skills will not be scanned.`);
+}
 
 module.exports = {
   PORT: process.env.PORT || 3721,
   WIN_USER_HOME,
   WSL_DISTRO,
   WSL_USER,
+  WSL_HOME,
   WSL_HOME_UNC,
   
   // Pre-configured agent scan targets across Windows and WSL2

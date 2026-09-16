@@ -15,6 +15,12 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Mount API routes
 app.use('/api', apiRouter);
 
+// Browsers request /favicon.ico implicitly; without this the SPA fallback
+// below would answer it with index.html.
+app.get('/favicon.ico', (req, res) => {
+  res.redirect(301, '/favicon.svg');
+});
+
 // Fallback to index.html for SPA
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
