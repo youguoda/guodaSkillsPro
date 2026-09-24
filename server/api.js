@@ -12,7 +12,7 @@ const { HttpError, assertContainedSkillPath } = require('./guard');
 const { TIERS, SYNC_STATUSES, tierLabel, tierIcon } = require('./vocab');
 const { recordUsage, setFavorite, mergeUsage } = require('./usage');
 const { installSkillToTarget } = require('./deploy');
-const { getLlmConfig, saveLlmConfig, clearLlmConfig, explainSkill } = require('./llm');
+const { getLlmConfig, saveLlmConfig, clearLlmConfig, explainSkill, getExplainPromptTemplate, usingDefaultPrompt, forgetAllExplanations, defaultExplainPromptTemplate } = require('./llm');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -433,7 +433,11 @@ router.get('/llm-config', (req, res) => {
     provider: cfg.provider,
     baseUrl: cfg.baseUrl || '',
     model: cfg.model || '',
-    source: cfg.source
+    source: cfg.source,
+    hasApiKey: !!cfg.apiKey,
+    promptTemplate: getExplainPromptTemplate(),
+    usingDefaultPrompt: usingDefaultPrompt(),
+    defaultPromptTemplate: defaultExplainPromptTemplate()
   });
 });
 
@@ -441,14 +445,24 @@ router.get('/llm-config', (req, res) => {
  * AI guide: save or reset the LLM configuration (OpenAI-compatible endpoint)
  */
 router.post('/llm-config', (req, res) => {
-  const { baseUrl, apiKey, model, reset } = req.body || {};
+  const { baseUrl, apiKey, model, promptTemplate, reset, clearCache } = req.body || {};
   try {
     if (reset) {
       clearLlmConfig();
       return res.json({ success: true, reset: true });
     }
-    const entry = saveLlmConfig({ baseUrl, apiKey, model });
-    res.json({ success: true, configured: true, baseUrl: entry.baseUrl, model: entry.model });
+    if (clearCache) {
+      forgetAllExplanations();
+      return res.json({ success: true, cacheCleared: true });
+    }
+    const entry = saveLlmConfig({ baseUrl, apiKey, model, promptTemplate });
+    res.json({
+      success: true,
+      configured: true,
+      baseUrl: entry.baseUrl,
+      model: entry.model,
+      usingDefaultPrompt: !entry.promptTemplate
+    });
   } catch (err) {
     sendError(res, err);
   }

@@ -424,12 +424,12 @@ async function runTests() {
     let settingsBackup = null;
     const settingsFile = path.join(__dirname, 'server', 'data', 'llm-settings.json');
     try {
+      if (fs.existsSync(settingsFile)) settingsBackup = fs.readFileSync(settingsFile, 'utf8');
+      clearLlmConfig();
+
       const prompt = buildExplainPrompt('---\nname: demo\n---\n# Demo body', 'demo');
       assert(prompt.includes('# Demo body'), 'Prompt carries the SKILL.md content');
       assert(prompt.includes('## 这是什么') && prompt.includes('## 怎么用') && prompt.includes('## 举个例子'), 'Prompt enforces the three required sections');
-
-      // Snapshot user settings so the config roundtrip below cannot clobber them
-      if (fs.existsSync(settingsFile)) settingsBackup = fs.readFileSync(settingsFile, 'utf8');
 
       let chatCalls = 0;
       const fakeChat = async () => { chatCalls += 1; return '## 这是什么\n测试讲解'; };
@@ -446,10 +446,23 @@ async function runTests() {
       const cfgRes = await checkEndpoint('/api/llm-config');
       assert(cfgRes.statusCode === 200 && typeof cfgRes.json.configured === 'boolean', 'GET /api/llm-config reports configured flag');
       assert(cfgRes.json.apiKey === undefined, 'llm-config never leaks the API key');
+      assert(typeof cfgRes.json.promptTemplate === 'string' && cfgRes.json.promptTemplate.includes('{{skillMd}}'), 'llm-config returns the explain prompt template');
+      assert(cfgRes.json.defaultPromptTemplate.includes('## 这是什么'), 'default prompt template is exposed for the settings UI');
 
       await checkEndpoint('/api/llm-config', 'POST', { baseUrl: 'https://example.com/v4', apiKey: 'probe-key', model: 'probe-model' });
       const cfgAfter = await checkEndpoint('/api/llm-config');
       assert(cfgAfter.json.configured === true && cfgAfter.json.source === 'settings', 'Saved settings become the active provider');
+      assert(cfgAfter.json.hasApiKey === true && cfgAfter.json.apiKey === undefined, 'Saved key is acknowledged but never returned');
+
+      await checkEndpoint('/api/llm-config', 'POST', { promptTemplate: '自定义讲解 {{skillName}}\n{{skillMd}}' });
+      const cfgPrompt = await checkEndpoint('/api/llm-config');
+      assert(cfgPrompt.json.usingDefaultPrompt === false && cfgPrompt.json.promptTemplate.startsWith('自定义讲解'), 'Prompt can be updated without re-sending the API key');
+      const customPrompt = buildExplainPrompt('---\nname: demo\n---\n# Demo body', 'demo');
+      assert(customPrompt.includes('自定义讲解 demo') && customPrompt.includes('# Demo body'), 'Custom template interpolates skillName and skillMd');
+
+      await checkEndpoint('/api/llm-config', 'POST', { promptTemplate: '' });
+      const cfgResetPrompt = await checkEndpoint('/api/llm-config');
+      assert(cfgResetPrompt.json.usingDefaultPrompt === true, 'Empty promptTemplate restores the default');
 
       const explainUnknown = await checkEndpoint('/api/explain-skill', 'POST', { skillId: '__nope__' });
       assert(explainUnknown.statusCode === 404, `explain unknown skill -> ${explainUnknown.statusCode}`);

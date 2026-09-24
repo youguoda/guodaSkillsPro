@@ -35,11 +35,63 @@ function getSettings() {
   return (s && s.baseUrl && s.apiKey) ? s : null;
 }
 
-function saveLlmConfig({ baseUrl, apiKey, model }) {
-  if (!baseUrl || !apiKey || !model) {
-    throw new HttpError(400, 'baseUrl, apiKey and model are all required');
+function defaultExplainPromptTemplate() {
+  return [
+    '你是一位资深的 AI Agent 技能专家。请阅读下面的 SKILL.md 技能文件，用中文、以 Markdown 格式输出，严格包含以下三个小节：',
+    '',
+    '## 这是什么',
+    '用 2-3 句话专业而简洁地说明这个技能解决什么问题、核心能力是什么。',
+    '',
+    '## 怎么用',
+    '用编号步骤说明：什么场景下会触发、如何调用、使用时要注意什么。',
+    '',
+    '## 举个例子',
+    '给一个通俗、具体、贴近日常的使用例子（一个小场景或一段对话即可），让新手一看就懂。',
+    '',
+    '要求：总长度不超过 400 字；语言简洁明了；专业但不堆砌术语。',
+    '',
+    '技能名称：{{skillName}}',
+    '--- SKILL.md 内容开始 ---',
+    '{{skillMd}}',
+    '--- SKILL.md 内容结束 ---'
+  ].join('\n');
+}
+
+function getExplainPromptTemplate() {
+  const s = readJson(SETTINGS_FILE);
+  const custom = s && String(s.promptTemplate || '').trim();
+  return custom || defaultExplainPromptTemplate();
+}
+
+function usingDefaultPrompt() {
+  const s = readJson(SETTINGS_FILE);
+  return !(s && String(s.promptTemplate || '').trim());
+}
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function saveLlmConfig({ baseUrl, apiKey, model, promptTemplate } = {}) {
+  const prev = readJson(SETTINGS_FILE) || {};
+  const nextKey = (apiKey !== undefined && String(apiKey).trim()) ? String(apiKey).trim() : (prev.apiKey || '');
+  const nextUrl = (baseUrl !== undefined && String(baseUrl).trim()) ? String(baseUrl).trim() : (prev.baseUrl || '');
+  const nextModel = (model !== undefined && String(model).trim()) ? String(model).trim() : (prev.model || '');
+
+  if (!nextUrl || !nextKey || !nextModel) {
+    throw new HttpError(400, 'baseUrl, apiKey and model are all required (leave apiKey blank to keep the saved one)');
   }
-  const entry = { baseUrl: String(baseUrl).trim(), apiKey: String(apiKey).trim(), model: String(model).trim(), savedAt: new Date().toISOString() };
+
+  const entry = { baseUrl: nextUrl, apiKey: nextKey, model: nextModel, savedAt: new Date().toISOString() };
+
+  if (promptTemplate !== undefined) {
+    const tpl = String(promptTemplate).trim();
+    if (tpl) entry.promptTemplate = tpl;
+  } else if (prev.promptTemplate) {
+    entry.promptTemplate = prev.promptTemplate;
+  }
+
+  ensureDataDir();
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(entry, null, 2), 'utf8');
   return entry;
 }
@@ -123,29 +175,24 @@ async function chat(prompt, cfg, { timeoutMs = 60000 } = {}) {
 
 /** The instruction that turns a raw SKILL.md into a professional but plain explanation */
 function buildExplainPrompt(skillMd, skillName) {
-  return [
-    '你是一位资深的 AI Agent 技能专家。请阅读下面的 SKILL.md 技能文件，用中文、以 Markdown 格式输出，严格包含以下三个小节：',
-    '',
-    '## 这是什么',
-    '用 2-3 句话专业而简洁地说明这个技能解决什么问题、核心能力是什么。',
-    '',
-    '## 怎么用',
-    '用编号步骤说明：什么场景下会触发、如何调用、使用时要注意什么。',
-    '',
-    '## 举个例子',
-    '给一个通俗、具体、贴近日常的使用例子（一个小场景或一段对话即可），让新手一看就懂。',
-    '',
-    '要求：总长度不超过 400 字；语言简洁明了；专业但不堆砌术语。',
-    '',
-    `技能名称：${skillName}`,
-    '--- SKILL.md 内容开始 ---',
-    String(skillMd || ''),
-    '--- SKILL.md 内容结束 ---'
-  ].join('\n');
+  const tpl = getExplainPromptTemplate();
+  let out = tpl
+    .replaceAll('{{skillName}}', String(skillName || ''))
+    .replaceAll('{{skillMd}}', String(skillMd || ''));
+  // If a custom template dropped the body placeholder, still attach the file
+  // so the model is never asked to explain a skill it cannot see.
+  if (!tpl.includes('{{skillMd}}')) {
+    out += `\n\n--- SKILL.md 内容开始 ---\n${String(skillMd || '')}\n--- SKILL.md 内容结束 ---`;
+  }
+  return out;
 }
 
 function loadExplanations() {
   return readJson(EXPLAIN_FILE) || {};
+}
+
+function forgetAllExplanations() {
+  if (fs.existsSync(EXPLAIN_FILE)) fs.writeFileSync(EXPLAIN_FILE, '{}', 'utf8');
 }
 
 function forgetExplanation(skillId) {
@@ -201,7 +248,11 @@ module.exports = {
   saveLlmConfig,
   clearLlmConfig,
   buildExplainPrompt,
+  defaultExplainPromptTemplate,
+  getExplainPromptTemplate,
+  usingDefaultPrompt,
   explainSkill,
   forgetExplanation,
+  forgetAllExplanations,
   getSettings
 };

@@ -51,9 +51,67 @@ function toggleTheme() {
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
   applyTheme(currentTheme());
+  setupModalDismissal();
   loadSystemInfo();
   refreshSkills();
 });
+
+// ---------------------------------------------------------------------
+// Dismissing modals by clicking the backdrop or pressing Escape
+// ---------------------------------------------------------------------
+function modalClosers() {
+  return {
+    'modal-editor': closeEditorModal,
+    'modal-diff': closeDiffModal,
+    'modal-new-skill': closeNewSkillModal,
+    'modal-override': closeOverrideModal,
+    'modal-guide': closeGuideModal,
+    'modal-llm-settings': closeLlmSettingsModal
+  };
+}
+
+function setupModalDismissal() {
+  const closers = modalClosers();
+
+  Object.keys(closers).forEach(id => {
+    const overlay = document.getElementById(id);
+    if (!overlay) return;
+    // Require the press to both start and end on the backdrop, otherwise
+    // dragging a text selection out of the dialog would dismiss it.
+    let pressedBackdrop = false;
+    overlay.addEventListener('mousedown', e => { pressedBackdrop = e.target === overlay; });
+    overlay.addEventListener('click', e => {
+      if (pressedBackdrop && e.target === overlay) requestModalClose(id);
+      pressedBackdrop = false;
+    });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    // Last match wins so the topmost dialog closes first
+    const open = Object.keys(closers).filter(id => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('hidden');
+    });
+    if (open.length) requestModalClose(open[open.length - 1]);
+  });
+}
+
+function requestModalClose(modalId) {
+  // Backdrop clicks and Escape are easy to trigger by accident, so unlike the
+  // explicit 取消 / ✕ buttons they confirm before dropping edited SKILL.md.
+  if (modalId === 'modal-editor' && editorHasUnsavedChanges()) {
+    if (!confirm('SKILL.md 有未保存的修改，确定要关闭吗？')) return;
+  }
+  const close = modalClosers()[modalId];
+  if (close) close();
+}
+
+function editorHasUnsavedChanges() {
+  const textarea = document.getElementById('editor-textarea');
+  if (!textarea || !currentActiveSkill) return false;
+  return textarea.value !== (currentActiveSkill.parsed.rawContent || '');
+}
 
 // Toast notification helper
 function showToast(message, type = 'info') {
@@ -337,57 +395,10 @@ function renderCardsView() {
       : '';
 
     // Build Agent location rows
-    const agentRows = (skill.managedBy || []).map(m => {
-      const isWin = m.env === 'windows';
-      const badgeClass = isWin ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-      return `
-        <div class="flex items-center justify-between text-[11px] bg-slate-950/70 px-2 py-1 rounded-lg border border-slate-800/80">
-          <div class="flex items-center space-x-1.5 truncate">
-            <span class="px-1.5 py-0.2 rounded text-[9px] font-bold border ${badgeClass}">${isWin ? 'Win' : 'WSL'}</span>
-            <span class="text-slate-300 font-medium">${escapeHtml(m.agentName)}</span>
-            <span class="text-slate-500 font-mono truncate" title="${escapeHtml(m.displayPath)}">${escapeHtml(m.displayPath)}</span>
-          </div>
-          <button onclick="openInCursor('${skill.id}', '${m.targetId}')" class="text-[10px] text-indigo-400 hover:text-indigo-300 ml-2 flex-shrink-0 font-medium hover:underline flex items-center space-x-0.5" title="在 Cursor 中直接打开此 Agent 目录">
-            <span>打开</span>
-          </button>
-        </div>
-      `;
-    }).join('');
-
-    // Action buttons based on status
-    let actionButtons = '';
-
-    // Sync button
-    if (skill.syncStatus === 'windows_only') {
-      actionButtons += `<button onclick="syncSingleSkill('${skill.id}', 'to_wsl')" class="px-2.5 py-1 text-[11px] bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg transition">➔ 同步到 WSL</button>`;
-    } else if (skill.syncStatus === 'wsl_only') {
-      actionButtons += `<button onclick="syncSingleSkill('${skill.id}', 'to_windows')" class="px-2.5 py-1 text-[11px] bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg transition">➔ 同步到 Win</button>`;
-    } else if (skill.syncStatus === 'diff') {
-      actionButtons += `<button onclick="openDiffModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg transition font-medium">⚡ 查看 Diff</button>`;
-    }
-
-    // Tier-specific buttons
-    if (skill.tier === 'builtin') {
-      actionButtons += `<button onclick="forkBuiltinSkill('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg transition">🔱 Fork 派生</button>`;
-    } else if (skill.tier === 'downloaded' && skill.upstream) {
-      actionButtons += `<button onclick="checkSkillUpdate('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">🔄 检查更新</button>`;
-    }
-
-    // Quick open in cursor button right on card
-    actionButtons += `<button onclick="openInCursor('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition font-medium">⚡ 用 Cursor 打开</button>`;
-
-    // Manual attribute override entry
-    actionButtons += `<button onclick="openOverrideModal('${skill.id}')" class="px-2.5 py-1 text-[11px] ${skill.isOverridden ? 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'} rounded-lg transition" title="人工调整类别 / 绑定上游 Git / 标签与备注">⚙️ 调整属性</button>`;
-
-    // Guide & Use entry — learn what it does, install elsewhere, favorite
-    actionButtons = `<button onclick="openGuideModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg transition font-medium" title="了解技能内容并使用：复制提示词 / 安装到其他 Agent / 收藏">📖 了解与使用</button>` + actionButtons;
-
-    // View & Edit button
-    actionButtons += `<button onclick="openEditorModal('${skill.id}')" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">查看 / 编辑</button>`;
+    const agentChips = skillLocationChipsHtml(skill);
 
     return `
-      <div class="skill-card bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
-        <!-- Card Top -->
+      <div class="skill-card bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 cursor-pointer" onclick="openGuideModal('${skill.id}')" title="点击查看与了解">
         <div class="space-y-2">
           <div class="flex items-start justify-between gap-2">
             <div class="flex items-center space-x-2 truncate">
@@ -408,34 +419,74 @@ function renderCardsView() {
 
           ${(skill.customTags && skill.customTags.length > 0) ? `
           <div class="flex flex-wrap gap-1">
-            ${skill.customTags.map(t => `<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800/80 text-slate-300 border border-slate-700 cursor-pointer hover:border-indigo-500/60" onclick="searchByTag('${escapeHtml(t)}')" title="点击按标签「${escapeHtml(t)}」筛选">#${escapeHtml(t)}</span>`).join('')}
+            ${skill.customTags.map(t => `<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800/80 text-slate-300 border border-slate-700 cursor-pointer hover:border-indigo-500/60" onclick="event.stopPropagation(); searchByTag('${escapeHtml(t)}')" title="点击按标签「${escapeHtml(t)}」筛选">#${escapeHtml(t)}</span>`).join('')}
           </div>` : ''}
           ${skill.customNotes ? `<p class="text-[11px] text-amber-300/80 bg-amber-500/5 border border-amber-500/10 rounded-lg px-2 py-1 leading-relaxed" title="${escapeHtml(skill.customNotes)}"><span class="font-semibold">📝</span> ${escapeHtml(skill.customNotes)}</p>` : ''}
         </div>
 
-        <!-- Agent Locations Section (明确展示归属哪个 Agent 目录) -->
-        <div class="space-y-1.5 pt-1">
-          <div class="flex items-center justify-between text-[10px] text-slate-500 font-medium">
-            <span>Agent 归属与所在目录:</span>
+        <div class="pt-1 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-1 min-w-0">${agentChips}</div>
             ${syncBadgeHtml}
           </div>
-          <div class="space-y-1">
-            ${agentRows}
-          </div>
           ${skill.upstream ? `
-          <div class="flex items-center justify-between truncate text-slate-500 text-[10px] font-mono pt-1" title="${skill.upstream.sourceUrl}">
-            <span>上游:</span>
-            <span class="text-indigo-400 truncate max-w-[170px]">${skill.upstream.source}</span>
+          <div class="text-[10px] font-mono text-slate-500 truncate" title="${skill.upstream.sourceUrl}">
+            上游 <span class="text-indigo-400">${escapeHtml(skill.upstream.source)}</span>
           </div>` : ''}
-        </div>
-
-        <!-- Card Actions -->
-        <div class="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5 justify-end">
-          ${actionButtons}
         </div>
       </div>
     `;
   }).join('');
+}
+
+function skillLocationChipsHtml(skill, { openable = false } = {}) {
+  return (skill.managedBy || []).map(m => {
+    const isWin = m.env === 'windows';
+    const badgeClass = isWin ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+    const openBtn = openable
+      ? `<button type="button" onclick="launchFromGuide(openInCursor, '${m.targetId}')" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium hover:underline" title="在 Cursor 中打开此目录">打开</button>`
+      : '';
+    return `
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[10px] ${badgeClass}" title="${escapeHtml(m.displayPath)}">
+        <span class="font-bold">${isWin ? 'Win' : 'WSL'}</span>
+        <span class="text-slate-300">${escapeHtml(m.agentName)}</span>
+        ${openBtn}
+      </span>`;
+  }).join('');
+}
+
+function skillActionButtonsHtml(skill) {
+  const btn = (label, handler, cls) =>
+    `<button type="button" onclick="${handler}" class="px-2.5 py-1 text-[11px] rounded-lg transition ${cls}">${label}</button>`;
+  const parts = [];
+
+  if (skill.syncStatus === 'windows_only') {
+    parts.push(btn('➔ 同步到 WSL', "launchFromGuide(syncSingleSkill, 'to_wsl')", 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30'));
+  } else if (skill.syncStatus === 'wsl_only') {
+    parts.push(btn('➔ 同步到 Win', "launchFromGuide(syncSingleSkill, 'to_windows')", 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30'));
+  } else if (skill.syncStatus === 'diff') {
+    parts.push(btn('⚡ 查看 Diff', 'launchFromGuide(openDiffModal)', 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-medium'));
+  }
+
+  if (skill.tier === 'builtin') {
+    parts.push(btn('🔱 Fork 派生', 'launchFromGuide(forkBuiltinSkill)', 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30'));
+  } else if (skill.tier === 'downloaded' && skill.upstream) {
+    parts.push(btn('🔄 检查更新', 'launchFromGuide(checkSkillUpdate)', 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'));
+  }
+
+  parts.push(btn('⚡ 用 Cursor 打开', 'launchFromGuide(openInCursor)', 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-medium'));
+  parts.push(btn('⚙️ 调整属性', 'launchFromGuide(openOverrideModal)', skill.isOverridden
+    ? 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30'
+    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'));
+  parts.push(btn('查看 / 编辑', 'launchFromGuide(openEditorModal)', 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'));
+  return parts.join('');
+}
+
+function launchFromGuide(fn, ...args) {
+  const skillId = guideSkillId;
+  closeGuideModal();
+  if (!skillId || typeof fn !== 'function') return;
+  fn(skillId, ...args);
 }
 
 // Render Compact List (简洁模式) — skills grouped by agent target directory
@@ -468,17 +519,13 @@ function renderCompactList() {
       const statusText = syncLabel[s.syncStatus] || s.syncStatus;
       const desc = (s.description || '').slice(0, 90);
       return `
-        <div class="group flex items-center gap-2 px-4 py-1.5 hover:bg-slate-900/70 border-b border-slate-900/80 last:border-0 text-xs">
+        <div class="flex items-center gap-2 px-4 py-1.5 hover:bg-slate-900/70 border-b border-slate-900/80 last:border-0 text-xs cursor-pointer" onclick="openGuideModal('${s.id}')" title="点击查看与了解">
           <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}" title="${escapeHtml(statusText)}"></span>
           <span class="flex-shrink-0" title="${escapeHtml(tierLabelOf(s.tier))}">${tierIconOf(s.tier)}</span>
-          <button onclick="openGuideModal('${s.id}')" class="font-mono font-semibold text-slate-200 hover:text-indigo-300 truncate max-w-[200px]" title="${escapeHtml(s.name)} — 点击打开了解与使用">${escapeHtml(s.name)}</button>
+          <span class="font-mono font-semibold text-slate-200 truncate max-w-[200px]" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
           <span class="text-slate-500 truncate flex-1" title="${escapeHtml(s.description || '')}">${escapeHtml(desc)}</span>
           ${(s.usage && s.usage.favorite) ? '<span class="flex-shrink-0" title="已收藏">⭐</span>' : ''}
           ${s.isOverridden ? '<span class="flex-shrink-0 text-[10px] text-amber-400" title="属性被人工覆盖">✋</span>' : ''}
-          <span class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
-            <button onclick="openEditorModal('${s.id}', '${t.id}')" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" title="查看 / 编辑">✏️</button>
-            <button onclick="openInCursor('${s.id}', '${t.id}')" class="px-1.5 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30" title="用 Cursor 打开">⚡</button>
-          </span>
         </div>
       `;
     }).join('');
@@ -853,6 +900,8 @@ async function openGuideModal(skillId) {
   // First instance drives the rendered content
   const first = (skill.managedBy || [])[0];
   document.getElementById('guide-current-path').textContent = first ? first.path : '';
+  document.getElementById('guide-locations').innerHTML = skillLocationChipsHtml(skill, { openable: true }) || '<span class="text-[11px] text-slate-500">未发现存放位置</span>';
+  document.getElementById('guide-actions').innerHTML = skillActionButtonsHtml(skill);
 
   document.getElementById('guide-markdown').innerHTML = '<p class="text-slate-500 text-center py-6">正在加载 SKILL.md ...</p>';
   document.getElementById('guide-files').innerHTML = '<li class="text-slate-500 italic">加载中...</li>';
@@ -1084,39 +1133,104 @@ async function explainCurrentSkill(force) {
 
 async function showAiSetupForm() {
   const box = document.getElementById('guide-ai-setup');
+  if (box) box.classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------------
+// AI Settings (top-bar): model / key / explain prompt
+// ---------------------------------------------------------------------
+let llmDefaultPromptTemplate = '';
+
+function closeLlmSettingsModal() {
+  const el = document.getElementById('modal-llm-settings');
+  if (el) el.classList.add('hidden');
+}
+
+async function openLlmSettingsModal() {
+  const modal = document.getElementById('modal-llm-settings');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  const status = document.getElementById('llm-settings-status');
+  const origin = document.getElementById('llm-prompt-origin');
   try {
     const res = await fetch('/api/llm-config');
     const cfg = await res.json();
-    document.getElementById('ai-setup-url').value = cfg.baseUrl || 'https://open.bigmodel.cn/api/paas/v4';
-    document.getElementById('ai-setup-model').value = cfg.model || 'glm-4-flash';
-  } catch (e) { /* defaults stay as placeholders */ }
-  box.classList.remove('hidden');
+    llmDefaultPromptTemplate = cfg.defaultPromptTemplate || '';
+    document.getElementById('llm-settings-url').value = cfg.baseUrl || 'https://open.bigmodel.cn/api/paas/v4';
+    document.getElementById('llm-settings-model').value = cfg.model || 'glm-4-flash';
+    const keyInput = document.getElementById('llm-settings-key');
+    keyInput.value = '';
+    keyInput.placeholder = cfg.hasApiKey ? '已保存，留空则不改' : 'API Key';
+    document.getElementById('llm-settings-prompt').value = cfg.promptTemplate || llmDefaultPromptTemplate;
+    if (status) {
+      status.textContent = cfg.configured
+        ? `已配置 · ${cfg.source === 'settings' ? '本机文件' : cfg.source === 'env' ? '环境变量' : cfg.source}`
+        : '尚未配置';
+    }
+    if (origin) origin.textContent = cfg.usingDefaultPrompt ? '当前：默认模板' : '当前：自定义模板';
+  } catch (err) {
+    if (status) status.textContent = '读取失败';
+    showToast(`无法读取 AI 设置: ${err.message}`, 'error');
+  }
 }
 
-async function saveAiSetup() {
-  const baseUrl = document.getElementById('ai-setup-url').value.trim();
-  const model = document.getElementById('ai-setup-model').value.trim();
-  const apiKey = document.getElementById('ai-setup-key').value.trim();
-  if (!baseUrl || !model || !apiKey) {
-    alert('Base URL、模型名和 API Key 都需要填写');
+function resetLlmPromptToDefault() {
+  const ta = document.getElementById('llm-settings-prompt');
+  if (!ta) return;
+  ta.value = llmDefaultPromptTemplate;
+  const origin = document.getElementById('llm-prompt-origin');
+  if (origin) origin.textContent = '将保存为默认模板';
+}
+
+async function saveLlmSettings() {
+  const baseUrl = document.getElementById('llm-settings-url').value.trim();
+  const model = document.getElementById('llm-settings-model').value.trim();
+  const apiKey = document.getElementById('llm-settings-key').value.trim();
+  const promptTemplate = document.getElementById('llm-settings-prompt').value;
+  if (!baseUrl || !model) {
+    alert('Base URL 和模型名不能为空');
     return;
   }
+  const btn = document.getElementById('btn-save-llm-settings');
+  if (btn) btn.textContent = '保存中...';
   try {
+    const body = { baseUrl, model, promptTemplate };
+    if (apiKey) body.apiKey = apiKey;
+    if (llmDefaultPromptTemplate && promptTemplate.trim() === llmDefaultPromptTemplate.trim()) {
+      body.promptTemplate = '';
+    }
     const res = await fetch('/api/llm-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseUrl, model, apiKey })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if (data.success) {
-      showToast('AI 服务配置已保存', 'success');
-      document.getElementById('guide-ai-setup').classList.add('hidden');
-      await explainCurrentSkill(true);
+      showToast('AI 设置已保存', 'success');
+      closeLlmSettingsModal();
     } else {
       showToast(`保存失败: ${data.error}`, 'error');
     }
   } catch (err) {
     showToast(`保存出错: ${err.message}`, 'error');
+  } finally {
+    if (btn) btn.textContent = '保存设置';
+  }
+}
+
+async function clearLlmExplanationCache() {
+  if (!confirm('清空全部技能的 AI 讲解缓存？下次讲解会重新请求模型。')) return;
+  try {
+    const res = await fetch('/api/llm-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clearCache: true })
+    });
+    const data = await res.json();
+    if (data.success) showToast('讲解缓存已清空', 'success');
+    else showToast(`清空失败: ${data.error}`, 'error');
+  } catch (err) {
+    showToast(`清空出错: ${err.message}`, 'error');
   }
 }
 
