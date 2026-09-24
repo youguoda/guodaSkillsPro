@@ -87,14 +87,44 @@ function setupModalDismissal() {
   });
 
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    // Last match wins so the topmost dialog closes first
     const open = Object.keys(closers).filter(id => {
       const el = document.getElementById(id);
       return el && !el.classList.contains('hidden');
     });
-    if (open.length) requestModalClose(open[open.length - 1]);
+    const top = open[open.length - 1];
+
+    if (e.key === 'Escape') {
+      if (top) requestModalClose(top);
+      return;
+    }
+
+    if (top !== 'modal-guide') return;
+    if (isTypingTarget(e.target)) return;
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      navigateGuideSkill(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      navigateGuideSkill(1);
+      return;
+    }
+    if (e.key === 'a' || e.key === 'A') {
+      e.preventDefault();
+      const btn = document.getElementById('guide-ai-btn');
+      if (btn && btn.disabled) return;
+      explainCurrentSkill(false);
+    }
   });
+}
+
+function isTypingTarget(el) {
+  if (!el || el === document.body || el === document.documentElement) return false;
+  const tag = (el.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return !!el.isContentEditable;
 }
 
 function requestModalClose(modalId) {
@@ -826,8 +856,7 @@ function switchEditorTab(tab) {
   } else if (tab === 'preview') {
     btnPrev.className = 'pb-2 text-indigo-400 border-b-2 border-indigo-500';
     viewPrev.classList.remove('hidden');
-    const content = document.getElementById('editor-textarea').value;
-    viewPrev.innerHTML = marked.parse(content);
+    renderSkillMarkdown(viewPrev, document.getElementById('editor-textarea').value);
   } else if (tab === 'files') {
     btnFiles.className = 'pb-2 text-indigo-400 border-b-2 border-indigo-500';
     viewFiles.classList.remove('hidden');
@@ -876,14 +905,39 @@ function closeEditorModal() {
 // Skill Guide Modal (了解与使用)
 // ---------------------------------------------------------------------
 let guideSkillId = null;
+let guideLoadToken = 0;
+const GUIDE_AI_BTN_IDLE = '🤖 让 AI 讲解这个技能';
+
+function visibleGuideSkills() {
+  return filterSkills();
+}
+
+function updateGuideNavPos() {
+  const el = document.getElementById('guide-nav-pos');
+  if (!el) return;
+  const list = visibleGuideSkills();
+  const idx = list.findIndex(s => s.id === guideSkillId);
+  el.textContent = idx >= 0 ? `${idx + 1} / ${list.length}` : `– / ${list.length}`;
+}
+
+function navigateGuideSkill(delta) {
+  const list = visibleGuideSkills();
+  if (list.length === 0) return;
+  const idx = list.findIndex(s => s.id === guideSkillId);
+  const from = idx >= 0 ? idx : 0;
+  const next = list[(from + delta + list.length) % list.length];
+  if (!next || next.id === guideSkillId) return;
+  openGuideModal(next.id);
+}
 
 async function openGuideModal(skillId) {
   const skill = allSkills.find(s => s.id === skillId);
   if (!skill) return;
+  const token = ++guideLoadToken;
   guideSkillId = skillId;
+  updateGuideNavPos();
 
   document.getElementById('guide-skill-name').textContent = skill.name;
-  document.getElementById('guide-skill-desc').textContent = skill.description || '未提供描述';
   document.getElementById('guide-fav-star').classList.toggle('hidden', !(skill.usage && skill.usage.favorite));
   const favBtn = document.getElementById('guide-fav-btn');
   favBtn.textContent = (skill.usage && skill.usage.favorite) ? '⭐ 已收藏' : '☆ 收藏';
@@ -907,6 +961,7 @@ async function openGuideModal(skillId) {
   document.getElementById('guide-files').innerHTML = '<li class="text-slate-500 italic">加载中...</li>';
   ['guide-ai-output', 'guide-ai-error', 'guide-ai-setup', 'guide-ai-refresh', 'guide-ai-badge'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('modal-guide').classList.remove('hidden');
+  if (isTypingTarget(document.activeElement)) document.activeElement.blur();
 
   // Record the view usage (fire-and-forget; keep displayed value until refresh)
   recordGuideUsage('view');
@@ -914,8 +969,13 @@ async function openGuideModal(skillId) {
   try {
     const res = await fetch(`/api/skill-detail?path=${encodeURIComponent(first ? first.path : '')}`);
     const data = await res.json();
+    if (token !== guideLoadToken) return;
     if (data.success) {
-      document.getElementById('guide-markdown').innerHTML = marked.parse(data.parsed.rawContent || '');
+      // The modal header already carries the name and a truncated description;
+      // repeat only the full description so nothing is hidden behind an ellipsis.
+      renderSkillMarkdown(document.getElementById('guide-markdown'), data.parsed.rawContent, {
+        description: data.parsed.description
+      });
       const filesList = document.getElementById('guide-files');
       filesList.innerHTML = (data.files && data.files.length)
         ? data.files.map(f => `<li class="flex items-center justify-between border-b border-slate-900 last:border-0"><span>${f.name.endsWith('.sh') || f.name.endsWith('.py') ? '⚙️' : '📄'} ${escapeHtml(f.path)}</span><span class="text-slate-500 text-[10px]">${(f.size / 1024).toFixed(1)} KB</span></li>`).join('')
@@ -925,6 +985,7 @@ async function openGuideModal(skillId) {
       document.getElementById('guide-markdown').innerHTML = `<p class="text-rose-400">加载失败: ${escapeHtml(data.error || '')}</p>`;
     }
   } catch (err) {
+    if (token !== guideLoadToken) return;
     document.getElementById('guide-markdown').innerHTML = `<p class="text-rose-400">加载异常: ${escapeHtml(err.message)}</p>`;
   }
 }
@@ -1078,6 +1139,7 @@ async function installSkillToTargetFromGuide() {
 function closeGuideModal() {
   document.getElementById('modal-guide').classList.add('hidden');
   guideSkillId = null;
+  guideLoadToken += 1;
 }
 
 // ---------------------------------------------------------------------
@@ -1085,6 +1147,8 @@ function closeGuideModal() {
 // ---------------------------------------------------------------------
 async function explainCurrentSkill(force) {
   if (!guideSkillId) return;
+  const token = guideLoadToken;
+  const skillId = guideSkillId;
   const btn = document.getElementById('guide-ai-btn');
   const output = document.getElementById('guide-ai-output');
   const errBox = document.getElementById('guide-ai-error');
@@ -1099,9 +1163,10 @@ async function explainCurrentSkill(force) {
     const res = await fetch('/api/explain-skill', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skillId: guideSkillId, force: !!force })
+      body: JSON.stringify({ skillId, force: !!force })
     });
     const data = await res.json();
+    if (token !== guideLoadToken) return;
 
     if (res.status === 503 || res.status === 502 || res.status === 504) {
       // Unconfigured, or the configured gateway rejected the key — offer the setup form
@@ -1123,11 +1188,13 @@ async function explainCurrentSkill(force) {
     document.getElementById('guide-ai-refresh').classList.remove('hidden');
     if (data.usage) updateGuideUsageStat(data.usage);
   } catch (err) {
+    if (token !== guideLoadToken) return;
     errBox.textContent = `讲解出错: ${err.message}`;
     errBox.classList.remove('hidden');
   } finally {
+    if (token !== guideLoadToken) return;
     btn.disabled = false;
-    btn.textContent = '🤖 让 AI 讲解这个技能';
+    btn.textContent = GUIDE_AI_BTN_IDLE;
   }
 }
 
@@ -1396,6 +1463,29 @@ async function createCustomSkill() {
   } catch (err) {
     showToast(`创建出错: ${err.message}`, 'error');
   }
+}
+
+// Same frontmatter grammar as server/skill-md.js — the raw YAML block is
+// metadata, so rendering it as prose would only pad the document with noise.
+function splitSkillMd(raw) {
+  const match = String(raw || '').match(/^---\r?\n([\s\S]*?)\r?\n---([\s\S]*)$/);
+  if (!match) return { frontmatter: '', body: String(raw || '') };
+  return { frontmatter: match[1], body: match[2].trim() };
+}
+
+function renderSkillMarkdown(el, raw, meta = {}) {
+  if (!el) return;
+  const { frontmatter, body } = splitSkillMd(raw);
+  const head = (meta.name || meta.description)
+    ? `<div class="md-reader-meta">
+         ${meta.name ? `<div class="md-reader-meta-name">${escapeHtml(meta.name)}</div>` : ''}
+         ${meta.description ? `<div class="md-reader-meta-desc">${escapeHtml(meta.description)}</div>` : ''}
+       </div>`
+    : '';
+  const fm = frontmatter
+    ? `<details class="md-reader-fm"><summary>YAML frontmatter</summary><pre><code>${escapeHtml(frontmatter)}</code></pre></details>`
+    : '';
+  el.innerHTML = head + fm + marked.parse(body);
 }
 
 // Utility

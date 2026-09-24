@@ -21,6 +21,19 @@
   --sh-diff-removed-bg: rgba(239, 68, 68, 0.15);
   --sh-diff-removed-fg: #f87171;
   --sh-diff-gutter: #64748b;
+
+  /* Long-form reading surfaces (AI explanation, SKILL.md, editor preview) */
+  --sh-reader-text: #cbd5e1;
+  --sh-reader-strong: #f8fafc;
+  --sh-reader-heading: #cbd5e1;
+  --sh-reader-muted: #94a3b8;
+  --sh-reader-rule: #1e293b;
+  --sh-reader-code-bg: rgba(148, 163, 184, 0.14);
+  --sh-reader-code-fg: #e2e8f0;
+  --sh-reader-pre-bg: rgba(2, 6, 23, 0.65);
+  --sh-reader-pre-border: #1e293b;
+  --sh-reader-link: #818cf8;
+  --sh-reader-quote-bar: #334155;
 }
 
 html.light {
@@ -56,6 +69,18 @@ html.light {
   --sh-diff-removed-bg: rgba(239, 68, 68, 0.13);
   --sh-diff-removed-fg: #b91c1c;
   --sh-diff-gutter: #94a3b8;
+
+  --sh-reader-text: #26313f;
+  --sh-reader-strong: #0f172a;
+  --sh-reader-heading: #334155;
+  --sh-reader-muted: #5a6979;
+  --sh-reader-rule: #e2e8f0;
+  --sh-reader-code-bg: rgba(15, 23, 42, 0.07);
+  --sh-reader-code-fg: #334155;
+  --sh-reader-pre-bg: #f3f6fa;
+  --sh-reader-pre-border: #e2e8f0;
+  --sh-reader-link: #4f46e5;
+  --sh-reader-quote-bar: #cbd5e1;
 
   color-scheme: light;
 }
@@ -113,6 +138,170 @@ code, pre {
   transform: translateY(-2px);
   box-shadow: 0 10px 25px -5px var(--sh-card-shadow), 0 8px 10px -6px var(--sh-card-shadow);
 }
+
+/* ---------------------------------------------------------------------------
+   Reading surfaces
+   The AI explanation, the SKILL.md render and the editor preview are prose, not
+   console output: body copy at 15px/1.75 and a measure capped around 72ch. Only
+   block children are constrained so code and tables can still run full width.
+--------------------------------------------------------------------------- */
+.md-reader {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: var(--sh-reader-text);
+  word-break: break-word;
+}
+
+.md-reader > * {
+  max-width: 72ch;
+}
+
+.md-reader > pre,
+.md-reader > table,
+.md-reader > details {
+  max-width: 100%;
+}
+
+.md-reader > * + * {
+  margin-top: 0.85em;
+}
+
+.md-reader p {
+  margin: 0;
+}
+
+/* Section titles read as labels above the text they introduce, so the space
+   belongs above the heading rather than below it. */
+.md-reader h1,
+.md-reader h2,
+.md-reader h3,
+.md-reader h4 {
+  color: var(--sh-reader-heading);
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.md-reader > h1 + *,
+.md-reader > h2 + *,
+.md-reader > h3 + *,
+.md-reader > h4 + * {
+  margin-top: 0.45em;
+}
+
+.md-reader > * + h1,
+.md-reader > * + h2,
+.md-reader > * + h3,
+.md-reader > * + h4 {
+  margin-top: 1.9em;
+}
+
+.md-reader h1 { font-size: 1.15rem; color: var(--sh-reader-strong); }
+.md-reader h2 {
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sh-reader-muted);
+}
+.md-reader h3 { font-size: 0.9375rem; color: var(--sh-reader-strong); }
+.md-reader h4 { font-size: 0.875rem; }
+
+.md-reader strong { color: var(--sh-reader-strong); font-weight: 600; }
+.md-reader em { font-style: italic; }
+
+.md-reader a {
+  color: var(--sh-reader-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-reader ul,
+.md-reader ol {
+  margin: 0;
+  padding-left: 1.5em;
+}
+.md-reader ul { list-style: disc; }
+.md-reader ol { list-style: decimal; }
+.md-reader li + li { margin-top: 0.4em; }
+.md-reader li > ul,
+.md-reader li > ol { margin-top: 0.4em; }
+.md-reader li::marker { color: var(--sh-reader-muted); }
+
+.md-reader blockquote {
+  margin: 0;
+  padding-left: 1em;
+  border-left: 3px solid var(--sh-reader-quote-bar);
+  color: var(--sh-reader-muted);
+}
+
+.md-reader code {
+  font-size: 0.8125rem;
+  background: var(--sh-reader-code-bg);
+  color: var(--sh-reader-code-fg);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.md-reader pre {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  background: var(--sh-reader-pre-bg);
+  border: 1px solid var(--sh-reader-pre-border);
+  border-radius: 10px;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
+.md-reader pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: inherit;
+}
+
+.md-reader hr {
+  border: 0;
+  border-top: 1px solid var(--sh-reader-rule);
+  margin: 1.6em 0;
+}
+
+.md-reader table {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.md-reader th,
+.md-reader td {
+  border: 1px solid var(--sh-reader-rule);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.md-reader th { color: var(--sh-reader-strong); font-weight: 600; }
+
+/* Frontmatter is metadata, not prose — keep it out of the reading flow. */
+.md-reader-meta {
+  padding-bottom: 0.9em;
+  border-bottom: 1px solid var(--sh-reader-rule);
+}
+.md-reader-meta-name {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.875rem;
+  color: var(--sh-reader-strong);
+}
+.md-reader-meta-desc {
+  margin-top: 0.35em;
+  color: var(--sh-reader-muted);
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.md-reader-fm > summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--sh-reader-muted);
+  user-select: none;
+}
+.md-reader-fm > summary:hover { color: var(--sh-reader-text); }
+.md-reader-fm > pre { margin-top: 0.6em; }
 
 /* Toast animation */
 @keyframes slideIn {
