@@ -209,12 +209,26 @@ function forgetExplanation(skillId) {
   return removed;
 }
 
+function explanationKey(subject) {
+  return `${subject.id}:${subject.dirHash || 'nohash'}`;
+}
+
+/**
+ * Cache lookup only — never contacts a provider, so callers can offer a stored
+ * explanation even when no LLM is configured. Returns null on a miss.
+ */
+function peekExplanation(subject) {
+  const key = explanationKey(subject);
+  const entry = loadExplanations()[key];
+  return entry ? { ...entry, cached: true, key } : null;
+}
+
 /**
  * Explain one skill. chatFn injectable for tests.
  * subject: { id, dirHash, content, name }
  */
 async function explainSkill(subject, { chatFn, force = false } = {}) {
-  const key = `${subject.id}:${subject.dirHash || 'nohash'}`;
+  const key = explanationKey(subject);
   const cache = loadExplanations();
 
   if (!force && cache[key]) {
@@ -252,6 +266,7 @@ module.exports = {
   getExplainPromptTemplate,
   usingDefaultPrompt,
   explainSkill,
+  peekExplanation,
   forgetExplanation,
   forgetAllExplanations,
   getSettings

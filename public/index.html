@@ -440,13 +440,17 @@
       </div>
 
       <!-- Body -->
-      <div class="flex-1 overflow-y-auto p-6 space-y-5">
+      <div id="guide-body" class="flex-1 overflow-y-auto p-6 space-y-5">
         <!-- AI 讲解区 -->
         <div class="bg-gradient-to-br from-violet-950/40 to-slate-950 border border-violet-500/20 rounded-xl p-4 space-y-3">
           <div class="flex flex-wrap items-center gap-2 text-xs">
             <button id="guide-ai-btn" onclick="explainCurrentSkill(false)" class="px-3 py-1.5 bg-violet-600/30 hover:bg-violet-600/40 text-violet-200 border border-violet-500/40 rounded-lg transition font-medium">🤖 让 AI 讲解这个技能</button>
             <button id="guide-ai-refresh" onclick="explainCurrentSkill(true)" class="hidden px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition">↻ 重新生成</button>
             <span id="guide-ai-badge" class="hidden text-[10px] font-mono px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30"></span>
+            <label class="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer select-none" title="打开技能时，如果之前生成过讲解就直接显示，不会重新调用模型">
+              <input type="checkbox" id="guide-ai-autoshow" onchange="setAiAutoShow(this.checked)" class="accent-violet-500 cursor-pointer">
+              <span>自动显示已缓存的讲解</span>
+            </label>
           </div>
           <div id="guide-ai-output" class="hidden md-reader bg-slate-950/80 border border-slate-800 rounded-xl px-7 py-6"></div>
           <div id="guide-ai-error" class="hidden text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2"></div>
@@ -502,7 +506,7 @@
       <div class="px-6 py-3 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between">
         <span id="guide-current-path" class="text-xs text-slate-500 font-mono truncate min-w-0"></span>
         <div class="flex items-center gap-3 flex-shrink-0 ml-3">
-          <span class="text-[11px] text-slate-500">A 讲解 · ← → 切换 · Esc 关闭</span>
+          <span class="text-[11px] text-slate-500">A 讲解 · ← → 切换 · ↑ ↓ 滚动 · Esc 关闭</span>
           <button onclick="closeGuideModal()" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition">关闭</button>
         </div>
       </div>

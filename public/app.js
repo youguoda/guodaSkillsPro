@@ -111,6 +111,15 @@ function setupModalDismissal() {
       navigateGuideSkill(1);
       return;
     }
+    // The guide body is its own scroll container, so the arrows would otherwise
+    // move the skills grid behind the backdrop instead of the open card.
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const body = document.getElementById('guide-body');
+      if (!body) return;
+      e.preventDefault();
+      body.scrollTop += (e.key === 'ArrowDown' ? 1 : -1) * 64;
+      return;
+    }
     if (e.key === 'a' || e.key === 'A') {
       e.preventDefault();
       const btn = document.getElementById('guide-ai-btn');
@@ -961,7 +970,13 @@ async function openGuideModal(skillId) {
   document.getElementById('guide-files').innerHTML = '<li class="text-slate-500 italic">加载中...</li>';
   ['guide-ai-output', 'guide-ai-error', 'guide-ai-setup', 'guide-ai-refresh', 'guide-ai-badge'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('modal-guide').classList.remove('hidden');
+  // Arrowing to the next skill should start it at the top, not wherever the
+  // previous one happened to be scrolled to.
+  const guideBody = document.getElementById('guide-body');
+  if (guideBody) guideBody.scrollTop = 0;
   if (isTypingTarget(document.activeElement)) document.activeElement.blur();
+  syncAiAutoShowToggle();
+  if (aiAutoShowCached) showCachedExplanation(token);
 
   // Record the view usage (fire-and-forget; keep displayed value until refresh)
   recordGuideUsage('view');
@@ -1145,6 +1160,51 @@ function closeGuideModal() {
 // ---------------------------------------------------------------------
 // AI Guide (🤖 AI 讲解) — LLM reads the SKILL.md and explains it
 // ---------------------------------------------------------------------
+let aiAutoShowCached = true;
+try { aiAutoShowCached = localStorage.getItem('skillshub-ai-autoshow') !== 'off'; } catch (e) {}
+
+function syncAiAutoShowToggle() {
+  const box = document.getElementById('guide-ai-autoshow');
+  if (box) box.checked = aiAutoShowCached;
+}
+
+function setAiAutoShow(on) {
+  aiAutoShowCached = !!on;
+  try { localStorage.setItem('skillshub-ai-autoshow', aiAutoShowCached ? 'on' : 'off'); } catch (e) {}
+  syncAiAutoShowToggle();
+  // Turning it on mid-guide should reveal the current skill's cache right away.
+  if (aiAutoShowCached) showCachedExplanation(guideLoadToken);
+}
+
+function renderExplanation(explanation) {
+  const output = document.getElementById('guide-ai-output');
+  const badge = document.getElementById('guide-ai-badge');
+  output.innerHTML = marked.parse(explanation.text || '');
+  output.classList.remove('hidden');
+  badge.textContent = `${explanation.model}${explanation.cached ? ' · 缓存' : ''}`;
+  badge.classList.remove('hidden');
+  document.getElementById('guide-ai-refresh').classList.remove('hidden');
+}
+
+/**
+ * Show a previously generated explanation without calling the model. A miss is
+ * not an error — the button stays as the way to generate one.
+ */
+async function showCachedExplanation(token) {
+  if (!guideSkillId) return;
+  const skillId = guideSkillId;
+  try {
+    const res = await fetch('/api/explain-skill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillId, cachedOnly: true })
+    });
+    const data = await res.json();
+    if (token !== guideLoadToken || !data.success || !data.explanation) return;
+    renderExplanation(data.explanation);
+  } catch (e) { /* a cache peek must never disturb the guide */ }
+}
+
 async function explainCurrentSkill(force) {
   if (!guideSkillId) return;
   const token = guideLoadToken;
@@ -1181,11 +1241,7 @@ async function explainCurrentSkill(force) {
       return;
     }
 
-    output.innerHTML = marked.parse(data.explanation.text || '');
-    output.classList.remove('hidden');
-    badge.textContent = `${data.explanation.model}${data.explanation.cached ? ' · 缓存' : ''}`;
-    badge.classList.remove('hidden');
-    document.getElementById('guide-ai-refresh').classList.remove('hidden');
+    renderExplanation(data.explanation);
     if (data.usage) updateGuideUsageStat(data.usage);
   } catch (err) {
     if (token !== guideLoadToken) return;

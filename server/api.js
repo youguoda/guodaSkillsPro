@@ -12,7 +12,7 @@ const { HttpError, assertContainedSkillPath } = require('./guard');
 const { TIERS, SYNC_STATUSES, tierLabel, tierIcon } = require('./vocab');
 const { recordUsage, setFavorite, mergeUsage } = require('./usage');
 const { installSkillToTarget } = require('./deploy');
-const { getLlmConfig, saveLlmConfig, clearLlmConfig, explainSkill, getExplainPromptTemplate, usingDefaultPrompt, forgetAllExplanations, defaultExplainPromptTemplate } = require('./llm');
+const { getLlmConfig, saveLlmConfig, clearLlmConfig, explainSkill, peekExplanation, getExplainPromptTemplate, usingDefaultPrompt, forgetAllExplanations, defaultExplainPromptTemplate } = require('./llm');
 const {
   forkToCustom,
   checkUpstreamUpdate,
@@ -472,7 +472,7 @@ router.post('/llm-config', (req, res) => {
  * AI guide: let the configured LLM read a skill and explain how to use it
  */
 router.post('/explain-skill', async (req, res) => {
-  const { skillId, force } = req.body || {};
+  const { skillId, force, cachedOnly } = req.body || {};
   if (!skillId) {
     return res.status(400).json({ success: false, error: 'skillId is required' });
   }
@@ -480,6 +480,13 @@ router.post('/explain-skill', async (req, res) => {
   try {
     const { skill, instance } = resolveSkill(await getInventory(), skillId);
     if (!skill || !instance) throw new HttpError(404, `Unknown skill: ${skillId}`);
+
+    // A cache peek is not a deliberate "explain me this" action: it needs no
+    // provider, reads no SKILL.md and must not inflate the usage counter.
+    if (cachedOnly) {
+      const cached = peekExplanation({ id: skill.id, dirHash: instance.dirHash });
+      return res.json({ success: true, explanation: cached });
+    }
 
     const parsed = await parseSkillFile(instance.path);
     if (!parsed) throw new HttpError(404, 'SKILL.md not found for this skill');

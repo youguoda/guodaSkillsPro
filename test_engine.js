@@ -11,7 +11,7 @@ const { setOverride, deleteOverride, getOverrides } = require('./server/override
 const { parseFrontmatter, sanitizeName, isNameCompliant } = require('./server/skill-md');
 const { recordUsage, setFavorite, resetUsage } = require('./server/usage');
 const { installSkillToTarget } = require('./server/deploy');
-const { buildExplainPrompt, explainSkill, forgetExplanation, saveLlmConfig, clearLlmConfig, getSettings } = require('./server/llm');
+const { buildExplainPrompt, explainSkill, peekExplanation, forgetExplanation, saveLlmConfig, clearLlmConfig, getSettings } = require('./server/llm');
 
 console.log('================================================================');
 console.log('        SKILLSHUB SELF-TEST & INTEGRATION VERIFICATION          ');
@@ -442,6 +442,12 @@ async function runTests() {
       assert(forced.cached === false && chatCalls === 2, 'force:true bypasses the cache');
       const other = await explainSkill({ ...subject, dirHash: 'bbb' }, { chatFn: fakeChat });
       assert(other.cached === false, 'Changed dirHash produces a fresh cache entry');
+
+      const callsBeforePeek = chatCalls;
+      const peeked = peekExplanation(subject);
+      assert(peeked && peeked.cached === true && peeked.text.includes('测试讲解') && chatCalls === callsBeforePeek,
+        'peekExplanation serves the cache without an LLM call');
+      assert(peekExplanation({ ...subject, dirHash: 'zzz' }) === null, 'peekExplanation returns null on a cache miss');
 
       const cfgRes = await checkEndpoint('/api/llm-config');
       assert(cfgRes.statusCode === 200 && typeof cfgRes.json.configured === 'boolean', 'GET /api/llm-config reports configured flag');
